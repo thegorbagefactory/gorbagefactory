@@ -683,16 +683,65 @@ export default function Page() {
     }
   }
 
+  function cacheKey(owner: string) {
+    return `gf-nfts-${owner}`;
+  }
+
+  function readCachedNfts(owner: string): DasAsset[] {
+    try {
+      const raw = localStorage.getItem(cacheKey(owner));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed as DasAsset[];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeCachedNfts(owner: string, assets: DasAsset[]) {
+    try {
+      localStorage.setItem(cacheKey(owner), JSON.stringify(assets.slice(0, 50)));
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchAssetsByMintIds(mints: string[], limit = 40) {
+    const slice = mints.slice(0, limit);
+    const out: DasAsset[] = [];
+    const concurrency = 6;
+    let idx = 0;
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (idx < slice.length) {
+        const mint = slice[idx++];
+        try {
+          const asset = (await fetchDas('getAsset', { id: mint })) as DasAsset;
+          if (asset && pickImage(asset)) out.push(asset);
+        } catch {
+          // ignore
+        }
+      }
+    });
+    await Promise.all(workers);
+    return out;
+  }
+
   async function loadNfts(owner: string) {
     setLoadingNfts(true);
     setStatus(`Loading NFTs for ${owner.slice(0, 6)}…`);
     try {
-      const timeoutMs = 6500;
+      const cached = readCachedNfts(owner);
+      if (cached.length) {
+        setNfts(cached);
+        if (!selected && cached[0]) setSelected(cached[0]);
+      }
+
+      const timeoutMs = 4500;
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
-      // DAS getAssetsByOwner
-      const result: any = await fetchDas(
+      const dasPromise = fetchDas(
         'getAssetsByOwner',
         {
           ownerAddress: owner,
@@ -700,43 +749,47 @@ export default function Page() {
           limit: 50,
         },
         controller.signal
-      );
+      ).then((result: any) => {
+        const items: DasAsset[] = result?.items || result?.assets || [];
+        return items.filter((a) => pickImage(a));
+      });
+
+      const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
+        if (!mints.length) return [] as DasAsset[];
+        return await fetchAssetsByMintIds(mints, 40);
+      });
+
+      const first = await Promise.race([dasPromise, tokenPromise]);
       window.clearTimeout(timer);
 
-      const items: DasAsset[] = result?.items || result?.assets || [];
-      const usable = items.filter((a) => pickImage(a));
-      if (usable.length) {
-        setNfts(usable);
-        if (!selected && usable[0]) setSelected(usable[0]);
+      if (first.length) {
+        setNfts(first);
+        writeCachedNfts(owner, first);
+        if (!selected && first[0]) setSelected(first[0]);
         setStatus('Select an NFT to remix.');
         return;
       }
 
-      // Fallback: scan token accounts + fetch assets by mint
-      setStatus('No indexed NFTs found. Scanning token accounts…');
-      const mints = await fetchMintsFromOwner(owner);
-      if (!mints.length) {
-        setNfts([]);
-        setStatus('No NFTs found for this wallet on Gorbagana.');
+      const [dasAssets, tokenAssets] = await Promise.allSettled([dasPromise, tokenPromise]);
+      const merged = [
+        ...(dasAssets.status === 'fulfilled' ? dasAssets.value : []),
+        ...(tokenAssets.status === 'fulfilled' ? tokenAssets.value : []),
+      ];
+      const unique = merged.filter((asset, idx, arr) => arr.findIndex((a) => a.id === asset.id) === idx);
+      if (unique.length) {
+        setNfts(unique);
+        writeCachedNfts(owner, unique);
+        if (!selected && unique[0]) setSelected(unique[0]);
+        setStatus('Select an NFT to remix.');
         return;
       }
 
-      const assets: DasAsset[] = [];
-      for (const mint of mints.slice(0, 40)) {
-        try {
-          const asset = (await fetchDas('getAsset', { id: mint })) as DasAsset;
-          if (asset && pickImage(asset)) assets.push(asset);
-        } catch {
-          // ignore bad mints
-        }
-      }
-      setNfts(assets);
-      if (!selected && assets[0]) setSelected(assets[0]);
-      setStatus(assets.length ? 'Select an NFT to remix.' : 'No NFTs found for this wallet on Gorbagana.');
+      setNfts([]);
+      setStatus('No NFTs found for this wallet on Gorbagana.');
     } catch (e: any) {
       const msg = String(e?.message || e || '').toLowerCase();
       if (msg.includes('aborted') || msg.includes('abort')) {
-        setStatus('NFT index is slow. Tap “Load Wallet NFTs” to retry.');
+        setStatus('NFT index is slow. Still searching…');
       } else {
         setStatus(e?.message ?? 'Failed to load NFTs.');
       }
