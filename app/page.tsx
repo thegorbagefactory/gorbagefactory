@@ -31,9 +31,9 @@ const RPC = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || process.env.NEXT_PUBLIC
 const DAS = 'https://gorapi.trashscan.io/';
 
 // Prices shown in UI (optional)
-const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || 'auto';
+const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || '1';
 const PRICE: Record<Machine, number> = {
-  CONVEYOR: PRICE_CONVEYOR_RAW === 'auto' ? Number.NaN : Number(PRICE_CONVEYOR_RAW),
+  CONVEYOR: Number(PRICE_CONVEYOR_RAW),
   COMPACTOR: Number(process.env.NEXT_PUBLIC_PRICE_COMPACTOR || '3500'),
   HAZMAT: Number(process.env.NEXT_PUBLIC_PRICE_HAZMAT || '4500'),
 };
