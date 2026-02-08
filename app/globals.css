@@ -1,0 +1,638 @@
+:root{
+  --bg:#050807;
+  --fg:#e9eef2;
+  --muted:#9fb0bd;
+  --card: rgba(10, 18, 14, .72);
+  --border: rgba(120, 255, 170, .12);
+  --accent:#7CFF6B;
+  --accent2:#00d4a6;
+  --danger:#ff4d4d;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color:var(--fg);
+  min-height:100vh;
+  background:
+    radial-gradient(1000px 500px at 20% -10%, rgba(124,255,107,.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(0,212,166,.14), transparent 55%),
+    linear-gradient(180deg, #040806 0%, #050a08 35%, #020404 100%);
+  overflow-x:hidden;
+}
+
+a{color:inherit}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 18px 70px}
+
+/* ===== Animated “Factory” Background ===== */
+.factoryBg{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:-1;
+}
+
+.factoryBg::before{
+  content:"";
+  position:absolute;
+  inset:-120px;
+  background:
+    /* faint grid */
+    linear-gradient(to right, rgba(124,255,107,.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(124,255,107,.04) 1px, transparent 1px);
+  background-size: 90px 90px;
+  filter: blur(.2px);
+  opacity:.45;
+  transform: translateZ(0);
+  animation: drift 18s linear infinite;
+}
+
+@keyframes drift{
+  from { transform: translate3d(0,0,0); }
+  to { transform: translate3d(-90px,-90px,0); }
+}
+
+/* conveyor belt band (more obvious) */
+.belt{
+  position:absolute;
+  left:-12%;
+  right:-12%;
+  top:56%;
+  height:160px;
+  transform: rotate(-2deg);
+  opacity:.95;
+
+  /* belt base + moving tread */
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.55)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(10, 20, 14, .0) 0px,
+      rgba(10, 20, 14, .0) 18px,
+      rgba(124,255,107,.22) 18px,
+      rgba(124,255,107,.22) 26px,
+      rgba(10, 20, 14, .0) 26px,
+      rgba(10, 20, 14, .0) 44px
+    );
+
+  border-top:2px solid rgba(124,255,107,.18);
+  border-bottom:2px solid rgba(124,255,107,.18);
+
+  box-shadow:
+    0 30px 90px rgba(0,0,0,.65),
+    inset 0 0 0 1px rgba(124,255,107,.10),
+    inset 0 22px 40px rgba(0,0,0,.35),
+    inset 0 -22px 40px rgba(0,0,0,.45);
+
+  animation: beltMove 0.9s linear infinite;
+}
+
+@keyframes beltMove{
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 0 0, -44px 0; }
+}
+
+.belt::before{
+  /* rollers */
+  content:"";
+  position:absolute;
+  left:0; right:0;
+  bottom:-34px;
+  height:34px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(233,238,242,.10) 0px,
+      rgba(233,238,242,.10) 26px,
+      rgba(0,0,0,0) 26px,
+      rgba(0,0,0,0) 46px
+    );
+  opacity:.5;
+  filter: blur(.2px);
+}
+
+.belt::after{
+  /* hazard stripe ribbon on top edge */
+  content:"";
+  position:absolute;
+  left:-40px; right:-40px;
+  top:10px;
+  height:22px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(124,255,107,.22) 0px,
+      rgba(124,255,107,.22) 14px,
+      rgba(0,0,0,.0) 14px,
+      rgba(0,0,0,.0) 28px
+    );
+  opacity:.55;
+  animation: hazardMove 1.2s linear infinite;
+}
+
+@keyframes hazardMove{
+  from { background-position: 0 0; }
+  to   { background-position: -56px 0; }
+}
+
+/* trash chunks riding the belt (subtle blobs) */
+.trashChunk{
+  position:absolute;
+  top: calc(56% + 28px);
+  width: 34px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(124,255,107,.16);
+  border: 1px solid rgba(124,255,107,.14);
+  filter: blur(.2px);
+  opacity: .75;
+  transform: rotate(8deg);
+  animation: trashRide 7s linear infinite;
+}
+
+.trashChunk:nth-child(3){ top: calc(56% + 70px); width: 22px; height: 16px; opacity:.55; animation-duration: 9s; }
+.trashChunk:nth-child(4){ top: calc(56% + 48px); width: 46px; height: 18px; opacity:.50; animation-duration: 11s; }
+.trashChunk:nth-child(5){ top: calc(56% + 34px); width: 18px; height: 18px; opacity:.45; animation-duration: 8.5s; }
+
+@keyframes trashRide{
+  from { left: -15%; }
+  to   { left: 115%; }
+}
+
+/* subtle “crusher” glow */
+.crusherGlow{
+  position:absolute;
+  left:50%;
+  top:56%;
+  width:720px;
+  height:280px;
+  transform: translate(-50%,-50%);
+  background: radial-gradient(circle at 50% 50%, rgba(124,255,107,.26), transparent 65%);
+  opacity:.75;
+  filter: blur(14px);
+}
+
+/* ===== UI components ===== */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{
+  width:40px;height:40px;border-radius:14px;
+  background: linear-gradient(135deg, rgba(124,255,107,.95), rgba(0,212,166,.9));
+  box-shadow: 0 10px 25px rgba(0,0,0,.35);
+}
+.h1{font-size:22px;font-weight:800;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+.card{
+  background: var(--card);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:16px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  backdrop-filter: blur(12px);
+}
+
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:980px){.grid{grid-template-columns: 1.1fr .9fr}}
+
+.label{font-size:12px;color:var(--muted);margin:10px 0 6px}
+
+input, select{
+  width:100%;
+  padding:12px 12px;
+  border-radius:14px;
+  border:1px solid rgba(124,255,107,.14);
+  background:#050807;
+  color:var(--fg);
+  outline:none;
+}
+input:focus, select:focus{border-color: rgba(124,255,107,.55); box-shadow: 0 0 0 3px rgba(124,255,107,.12)}
+
+.btn{
+  border:1px solid rgba(124,255,107,.45);
+  background: rgba(124,255,107,.10);
+  color: var(--fg);
+  padding:10px 12px;
+  border-radius:14px;
+  cursor:pointer;
+  font-weight:750;
+}
+.btnPrimary{border-color: rgba(124,255,107,.85); background: rgba(124,255,107,.16)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+
+.walletBtn{
+  background: linear-gradient(180deg, rgba(124,255,107,.20), rgba(0,0,0,.25));
+  border: 1px solid rgba(124,255,107,.55);
+  color: rgba(233,238,242,.95);
+  padding: 12px 14px;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.35);
+}
+.walletBtn:hover{
+  border-color: rgba(124,255,107,.85);
+  background: linear-gradient(180deg, rgba(124,255,107,.26), rgba(0,0,0,.22));
+}
+
+.pill{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:7px 10px;border-radius:999px;
+  border:1px solid rgba(124,255,107,.16);
+  color:var(--muted);
+  font-size:12px;
+  background: rgba(0,0,0,.18);
+}
+
+.note{font-size:13px;color:var(--muted);line-height:1.5}
+.ok{color:var(--accent)}
+.bad{color:var(--danger)}
+
+.hero{
+  margin: 14px 0 18px;
+  padding: 18px;
+  border-radius: 22px;
+  border:1px solid rgba(124,255,107,.14);
+  background: linear-gradient(135deg, rgba(124,255,107,.10), rgba(0,212,166,.06));
+}
+.heroTitle{font-size:34px; font-weight:900; letter-spacing:-.6px; margin:0 0 8px}
+.heroTitle span{color:var(--accent)}
+.heroDesc{margin:0; max-width: 70ch; color: rgba(233,238,242,.78); line-height:1.55}
+
+.steps{display:grid; gap:10px; margin-top:14px}
+@media(min-width:900px){.steps{grid-template-columns:repeat(3,1fr)}}
+.step{
+  padding:14px;
+  border-radius:18px;
+  border:1px solid rgba(124,255,107,.12);
+  background: rgba(0,0,0,.16);
+}
+.step b{display:block;margin-bottom:6px}
+
+.imgbox{
+  border-radius:18px; overflow:hidden;
+  border:1px solid rgba(124,255,107,.12);
+  background:#020404;
+  display:flex;align-items:center;justify-content:center;
+  min-height:280px;
+}
+.imgbox img{max-width:100%;height:auto;display:block}
+/* =========================
+   Gorbage Factory — Tier Preview Screen
+   Paste THIS at the very bottom of: app/globals.css
+   ========================= */
+
+.gf-wrap{
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 16px 56px;
+  display:grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 18px;
+}
+@media (max-width: 980px){
+  .gf-wrap{grid-template-columns:1fr}
+}
+
+.gf-card{
+  border: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  overflow:hidden;
+  position:relative;
+  backdrop-filter: blur(10px);
+}
+
+.gf-preview{ padding: 18px; }
+.gf-previewTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.gf-title{
+  font-size: 14px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color: rgba(255,255,255,.60);
+}
+.gf-status{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size: 12px;
+  color: rgba(255,255,255,.60);
+  white-space:nowrap;
+}
+.gf-dot{
+  width:8px;height:8px;border-radius:50%;
+  background: #48ff8a;
+  box-shadow: 0 0 18px rgba(72,255,138,.7);
+}
+
+.gf-screen{
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.14);
+  background:
+    radial-gradient(900px 380px at 50% 20%, rgba(255,255,255,.10), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  height: 460px;
+  position:relative;
+  overflow:hidden;
+}
+@media (max-width: 980px){
+  .gf-screen{height: 420px;}
+}
+
+.gf-nftSlot{
+  position:absolute;
+  inset: 18px;
+  border-radius: 14px;
+  overflow:hidden;
+  background:
+    radial-gradient(700px 320px at 50% 30%, rgba(255,255,255,.08), transparent 60%),
+    linear-gradient(135deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
+  border: 1px solid rgba(255,255,255,.10);
+  display:grid;
+  place-items:center;
+}
+.gf-nftImg{
+  width: min(310px, 70%);
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 18px 70px rgba(0,0,0,.45);
+  transform: translateZ(0);
+}
+
+.gf-nftLabel{
+  position:absolute;
+  left: 14px;
+  bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.28);
+  backdrop-filter: blur(10px);
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  max-width: 80%;
+}
+.gf-name{
+  font-size: 13px;
+  line-height:1.2;
+  letter-spacing:.02em;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gf-sub{
+  font-size: 11px;
+  color: rgba(255,255,255,.60);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.gf-effectBadge{
+  position:absolute;
+  right: 14px;
+  bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.28);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  color: rgba(255,255,255,.60);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.gf-effectBadge strong{
+  color: rgba(255,255,255,.92);
+  letter-spacing:.08em;
+}
+
+/* Tier panel */
+.gf-tierPanel{ padding: 18px; }
+.gf-tierHeader{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom: 12px;
+}
+.gf-tierHeader h2{
+  margin:0;
+  font-size: 18px;
+  letter-spacing:.02em;
+  font-weight: 700;
+}
+.gf-tierHeader p{
+  margin:0;
+  font-size: 12px;
+  color: rgba(255,255,255,.60);
+}
+.gf-tierMeta{
+  font-size: 11px;
+  color: rgba(255,255,255,.60);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+
+.gf-tierGrid{ display:grid; gap:10px; }
+
+.gf-tierBtn{
+  text-align:left;
+  width:100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  padding: 12px 12px;
+  cursor:pointer;
+  position:relative;
+  overflow:hidden;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+.gf-tierBtn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,.20);
+  background: rgba(255,255,255,.06);
+}
+.gf-tierBtn.active{
+  border-color: rgba(72,255,138,.45);
+  box-shadow: 0 0 0 1px rgba(72,255,138,.25) inset;
+  background: rgba(72,255,138,.06);
+}
+.gf-tierNameRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom: 6px;
+}
+.gf-tierName{
+  font-weight: 750;
+  letter-spacing:.03em;
+}
+.gf-tierMetaChip{
+  font-size: 11px;
+  color: rgba(255,255,255,.60);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.gf-tierPerks{
+  font-size: 12px;
+  color: rgba(255,255,255,.74);
+  line-height:1.4;
+}
+.gf-tip{
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255,255,255,.60);
+  line-height:1.5;
+}
+
+/* FX layers */
+.gf-fx{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:0;
+  transition: opacity .18s ease;
+  mix-blend-mode: screen;
+}
+.gf-fx.on{ opacity:1; }
+
+.gf-scanlines{
+  opacity:.12;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,.10) 0px,
+    rgba(255,255,255,.10) 1px,
+    rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0) 4px
+  );
+  mix-blend-mode: overlay;
+}
+.gf-glow{
+  background:
+    radial-gradient(520px 320px at 50% 40%, rgba(72,255,138,.22), transparent 70%),
+    radial-gradient(520px 320px at 40% 55%, rgba(122,215,255,.16), transparent 75%);
+  filter: blur(2px);
+  animation: gfFloatGlow 3.2s ease-in-out infinite;
+}
+@keyframes gfFloatGlow{
+  0%,100%{transform:translate3d(0,0,0)}
+  50%{transform:translate3d(0,-6px,0)}
+}
+.gf-scanbeam{
+  opacity:.18;
+  background: linear-gradient(120deg,
+    transparent 0%,
+    rgba(255,255,255,.0) 34%,
+    rgba(255,255,255,.26) 50%,
+    rgba(255,255,255,.0) 66%,
+    transparent 100%
+  );
+  animation: gfBeam 2.2s linear infinite;
+}
+@keyframes gfBeam{
+  0%{transform:translateX(-80%)}
+  100%{transform:translateX(80%)}
+}
+.gf-chromatic{
+  opacity:.22;
+  background:
+    radial-gradient(900px 420px at 50% 40%, rgba(255,0,160,.18), transparent 60%),
+    radial-gradient(900px 420px at 55% 45%, rgba(0,200,255,.16), transparent 60%),
+    radial-gradient(900px 420px at 48% 50%, rgba(255,255,255,.05), transparent 60%);
+  mix-blend-mode: screen;
+  filter: blur(1px) contrast(110%);
+  animation: gfChromaWobble 1.6s ease-in-out infinite;
+}
+@keyframes gfChromaWobble{
+  0%,100%{transform:translate3d(0,0,0)}
+  50%{transform:translate3d(3px,-2px,0)}
+}
+.gf-particles{
+  opacity:.28;
+  background:
+    radial-gradient(3px 3px at 10% 20%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(2px 2px at 30% 70%, rgba(122,215,255,.36), transparent 60%),
+    radial-gradient(2px 2px at 68% 40%, rgba(255,211,122,.34), transparent 60%),
+    radial-gradient(3px 3px at 85% 65%, rgba(156,123,255,.34), transparent 60%),
+    radial-gradient(2px 2px at 55% 18%, rgba(72,255,138,.36), transparent 60%);
+  animation: gfDrift 5.4s linear infinite;
+  mix-blend-mode: screen;
+}
+@keyframes gfDrift{
+  0%{transform:translate3d(0,0,0)}
+  100%{transform:translate3d(-22px,-18px,0)}
+}
+.gf-holo{
+  opacity:.26;
+  background:
+    linear-gradient(115deg,
+      rgba(255,255,255,.00) 0%,
+      rgba(255,255,255,.00) 35%,
+      rgba(255,255,255,.18) 50%,
+      rgba(255,255,255,.00) 65%,
+      rgba(255,255,255,.00) 100%),
+    conic-gradient(from 180deg at 50% 50%,
+      rgba(122,215,255,.18),
+      rgba(156,123,255,.14),
+      rgba(255,211,122,.16),
+      rgba(72,255,138,.12),
+      rgba(122,215,255,.18));
+  mix-blend-mode: screen;
+  filter: blur(1px) saturate(115%);
+  animation: gfHoloSweep 2.6s ease-in-out infinite;
+}
+@keyframes gfHoloSweep{
+  0%,100%{transform:translate3d(-14px,0,0)}
+  50%{transform:translate3d(14px,0,0)}
+}
+.gf-filigree{
+  opacity:.30;
+  background:
+    radial-gradient(closest-side at 20% 20%, rgba(255,211,122,.22), transparent 60%),
+    radial-gradient(closest-side at 80% 25%, rgba(255,211,122,.18), transparent 60%),
+    radial-gradient(closest-side at 25% 80%, rgba(255,211,122,.18), transparent 60%),
+    radial-gradient(closest-side at 80% 80%, rgba(255,211,122,.22), transparent 60%),
+    linear-gradient(to right, rgba(255,211,122,.22), rgba(255,211,122,.0), rgba(255,211,122,.22));
+  mix-blend-mode: screen;
+  filter: blur(.5px);
+  animation: gfFiligreePulse 3.8s ease-in-out infinite;
+}
+@keyframes gfFiligreePulse{
+  0%,100%{opacity:.22}
+  50%{opacity:.34}
+}
+.gf-plasma{
+  opacity:.22;
+  background:
+    radial-gradient(900px 460px at 20% 40%, rgba(156,123,255,.20), transparent 60%),
+    radial-gradient(900px 460px at 80% 35%, rgba(122,215,255,.16), transparent 60%),
+    radial-gradient(700px 360px at 50% 70%, rgba(72,255,138,.14), transparent 65%),
+    linear-gradient(120deg, rgba(255,255,255,.0), rgba(255,255,255,.18), rgba(255,255,255,.0));
+  mix-blend-mode: screen;
+  filter: blur(1px) contrast(115%);
+  animation: gfPlasmaMove 2.1s ease-in-out infinite;
+}
+@keyframes gfPlasmaMove{
+  0%,100%{transform:translate3d(0,0,0) scale(1)}
+  50%{transform:translate3d(6px,-6px,0) scale(1.02)}
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .gf-fx{animation:none !important}
+  .gf-tierBtn{transition:none}
+  .gf-tierBtn:hover{transform:none}
+}
