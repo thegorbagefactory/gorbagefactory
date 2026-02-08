@@ -9,7 +9,7 @@ import {
   WalletName,
   type TransactionOrVersionedTransaction,
 } from "@solana/wallet-adapter-base";
-import { PublicKey, Transaction, Connection, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, Connection } from "@solana/web3.js";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -88,13 +88,17 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
     }
   }
 
-  async signTransaction<T extends TransactionOrVersionedTransaction>(transaction: T): Promise<T> {
+  async signTransaction<T extends TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>>(
+    transaction: T
+  ): Promise<T> {
     const p = this._getProvider();
     if (!p?.signTransaction) throw new Error("Backpack provider missing signTransaction");
     return await p.signTransaction(transaction);
   }
 
-  async signAllTransactions<T extends TransactionOrVersionedTransaction>(transactions: T[]): Promise<T[]> {
+  async signAllTransactions<T extends TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>>(
+    transactions: T[]
+  ): Promise<T[]> {
     const p = this._getProvider();
     if (!p?.signAllTransactions) throw new Error("Backpack provider missing signAllTransactions");
     return await p.signAllTransactions(transactions);
@@ -108,7 +112,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
   }
 
   async sendTransaction(
-    transaction: Transaction | VersionedTransaction,
+    transaction: TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>,
     connection: Connection,
     options?: any
   ): Promise<string> {
@@ -117,7 +121,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
       const res = await p.signAndSendTransaction(transaction, options);
       return res?.signature ?? res;
     }
-    const signed = await this.signTransaction(transaction as TransactionOrVersionedTransaction);
+    const signed = await this.signTransaction(transaction);
     return await connection.sendRawTransaction(signed.serialize(), options);
   }
 
