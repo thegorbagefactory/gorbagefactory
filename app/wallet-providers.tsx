@@ -3,12 +3,7 @@
 import React, { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import {
-  BaseMessageSignerWalletAdapter,
-  WalletReadyState,
-  WalletName,
-  type TransactionVersion,
-} from "@solana/wallet-adapter-base";
+import { BaseMessageSignerWalletAdapter, WalletReadyState, WalletName } from "@solana/wallet-adapter-base";
 import { PublicKey, Transaction, Connection } from "@solana/web3.js";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -26,7 +21,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
   icon =
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSI4IiBmaWxsPSIjMTAxNDI1Ii8+PHBhdGggZD0iTTEwIDE2YzAtMy4zMTQgMi42ODYtNiA2LTZzNiAyLjY4NiA2IDYtMi42ODYgNi02IDYtNi0yLjY4Ni02LTZaIiBmaWxsPSIjNEY4M0Y1Ii8+PC9zdmc+";
 
-  supportedTransactionVersions: ReadonlySet<TransactionVersion> = new Set([0 as TransactionVersion]);
+  supportedTransactionVersions = undefined;
 
   private _provider: any = null;
   private _pk: PublicKey | null = null;
@@ -140,7 +135,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
 }
 
 export default function WalletProviders({ children }: { children: React.ReactNode }) {
-  const rpc = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.trashscan.io";
+  const rpc = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || "https://rpc.trashscan.io";
 
   const wallets = useMemo(() => [new BackpackAdapter()], []);
 

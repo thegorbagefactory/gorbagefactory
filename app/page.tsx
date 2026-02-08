@@ -777,7 +777,7 @@ export default function Page() {
                 sig = res?.signature || res;
               } catch (err: any) {
                 const msg = String(err?.message || err || '');
-                const match = msg.match(/Signature ([A-Za-z0-9]+)/);
+                const match = msg.match(/Signature ([1-9A-HJ-NP-Za-km-z]{80,90})/);
                 if (match?.[1]) {
                   sig = match[1];
                 } else {
@@ -805,7 +805,11 @@ export default function Page() {
               }
               setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
               const signed = await provider.signTransaction(tx);
-              sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true, maxRetries: 5 });
+              sig = await connection.sendRawTransaction(signed.serialize(), {
+                skipPreflight: false,
+                maxRetries: 5,
+                preflightCommitment: 'confirmed',
+              });
             } else {
               throw new Error('Wallet does not support transaction signing.');
             }
