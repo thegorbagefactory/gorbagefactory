@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import net from "net";
 import { Metaplex, keypairIdentity } from "@metaplex-foundation/js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+import { rateLimit, rateLimitResponse } from "../_lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -30,12 +32,33 @@ type Ledger = {
 };
 
 const RPC = process.env.GORBAGANA_RPC_URL || "https://rpc.gorbagana.wtf/";
-const TREASURY = process.env.TREASURY_WALLET;
-const ROLL_SECRET = process.env.ROLL_SECRET || "change-me";
-const PINATA_JWT = process.env.PINATA_JWT;
-const MINT_AUTHORITY_KEYPAIR = process.env.MINT_AUTHORITY_KEYPAIR;
+
+function requireEnv(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+const TREASURY = requireEnv("TREASURY_WALLET");
+const PINATA_JWT = requireEnv("PINATA_JWT");
+const MINT_AUTHORITY_KEYPAIR = requireEnv("MINT_AUTHORITY_KEYPAIR");
+const ROLL_SECRET = requireEnv("ROLL_SECRET");
+
+if (
+  !ROLL_SECRET ||
+  ROLL_SECRET === "change-me" ||
+  ROLL_SECRET === "CHANGE_ME_TO_A_LONG_RANDOM_SECRET" ||
+  ROLL_SECRET.length < 32
+) {
+  throw new Error("ROLL_SECRET must be set to a strong random value");
+}
+
 const LEDGER_PATH = process.env.REMIX_LEDGER_PATH || path.join(process.cwd(), "data", "remix-ledger.json");
 const GOR_LAMPORTS = Number(process.env.GOR_LAMPORTS ?? LAMPORTS_PER_SOL);
+
+if (!Number.isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
+  throw new Error("Invalid GOR_LAMPORTS configuration");
+}
 
 const PRICE_CONVEYOR = Number(process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "2500");
 const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "3500");
@@ -44,11 +67,58 @@ const TIER1_CAP = Number(process.env.TIER1_CAP ?? "3000");
 const TIER2_CAP = Number(process.env.TIER2_CAP ?? "999");
 const TIER3_CAP = Number(process.env.TIER3_CAP ?? "444");
 
+const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES ?? 8 * 1024 * 1024);
+const MAX_IMAGE_BYTES = Number(process.env.MAX_IMAGE_BYTES ?? 5 * 1024 * 1024);
+const MAX_TX_SLOT_AGE = Number(process.env.MAX_TX_SLOT_AGE ?? 300);
+
+if (!Number.isFinite(MAX_BODY_BYTES) || MAX_BODY_BYTES <= 0) {
+  throw new Error("Invalid MAX_BODY_BYTES configuration");
+}
+if (!Number.isFinite(MAX_IMAGE_BYTES) || MAX_IMAGE_BYTES <= 0) {
+  throw new Error("Invalid MAX_IMAGE_BYTES configuration");
+}
+if (!Number.isFinite(MAX_TX_SLOT_AGE) || MAX_TX_SLOT_AGE <= 0) {
+  throw new Error("Invalid MAX_TX_SLOT_AGE configuration");
+}
+
+const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const ALLOWED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const DEFAULT_ALLOWED_IMAGE_HOSTS = [
+  "ipfs.io",
+  "gateway.pinata.cloud",
+  "cloudflare-ipfs.com",
+  "nftstorage.link",
+  "dweb.link",
+  "arweave.net",
+  "arweave.dev",
+  "arweave.org",
+];
+const IMAGE_HOST_ALLOWLIST = (process.env.IMAGE_HOST_ALLOWLIST || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const ALLOWED_IMAGE_HOSTS = IMAGE_HOST_ALLOWLIST.length ? IMAGE_HOST_ALLOWLIST : DEFAULT_ALLOWED_IMAGE_HOSTS;
+
 const BASE_ODDS: Record<Machine, Record<TierId, number>> = {
   CONVEYOR: { tier1: 0.8, tier2: 0.18, tier3: 0.02 },
   COMPACTOR: { tier1: 0.65, tier2: 0.3, tier3: 0.05 },
   HAZMAT: { tier1: 0.45, tier2: 0.45, tier3: 0.1 },
 };
+
+const inFlightSignatures = new Set<string>();
+const inFlightMints = new Set<string>();
+let ledgerLock: Promise<void> = Promise.resolve();
+let cachedKeypair: Keypair | null = null;
+
+function withLedgerLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const previous = ledgerLock;
+  ledgerLock = next;
+  return previous.then(fn).finally(() => release());
+}
 
 function priceFor(machine: Machine) {
   const p =
@@ -114,27 +184,35 @@ function toLamports(amount: number) {
   return BigInt(Math.round(amount * GOR_LAMPORTS));
 }
 
-function getLamportDelta(tx: any, treasury: PublicKey) {
-  const meta = tx?.meta;
-  if (!meta) return null;
+function isValidSignature(sig: string) {
+  return sig.length >= 80 && sig.length <= 90 && BASE58_REGEX.test(sig);
+}
 
-  const keys = tx.transaction.message.accountKeys?.map((k: any) =>
-    k?.pubkey ? k.pubkey.toBase58() : k?.toBase58?.()
-  );
-  const idx = Array.isArray(keys) ? keys.indexOf(treasury.toBase58()) : -1;
-  if (idx < 0) return null;
+function isValidPublicKey(key: string) {
+  return key.length >= 32 && key.length <= 44 && BASE58_REGEX.test(key);
+}
 
-  const pre = BigInt(meta.preBalances?.[idx] ?? 0);
-  const post = BigInt(meta.postBalances?.[idx] ?? 0);
-  return post - pre;
+function sanitizeName(name: string) {
+  return name.replace(/[^\w\s\-\.]/g, "").trim().slice(0, 32) || "TrashTech";
 }
 
 function loadKeypair() {
-  if (!MINT_AUTHORITY_KEYPAIR) throw new Error("Missing MINT_AUTHORITY_KEYPAIR env var");
-  const raw = fs.readFileSync(MINT_AUTHORITY_KEYPAIR, "utf8");
+  if (cachedKeypair) return cachedKeypair;
+  const resolved = path.resolve(MINT_AUTHORITY_KEYPAIR);
+  const allowedRoots = [path.resolve(process.cwd()), "/etc/secrets"];
+  const isAllowed = allowedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
+  if (!isAllowed) throw new Error("MINT_AUTHORITY_KEYPAIR path outside allowed roots");
+  const raw = fs.readFileSync(resolved, "utf8");
   const arr = JSON.parse(raw);
-  const secret = Uint8Array.from(arr);
-  return Keypair.fromSecretKey(secret);
+  if (!Array.isArray(arr)) throw new Error("Invalid mint authority keypair file");
+  cachedKeypair = Keypair.fromSecretKey(Uint8Array.from(arr));
+  return cachedKeypair;
+}
+
+function backupCorruptedLedger() {
+  if (!fs.existsSync(LEDGER_PATH)) return;
+  const backup = `${LEDGER_PATH}.corrupted.${Date.now()}`;
+  fs.copyFileSync(LEDGER_PATH, backup);
 }
 
 function loadLedger(): Ledger {
@@ -151,14 +229,18 @@ function loadLedger(): Ledger {
       mintCount: parsed.mintCount ?? 0,
       collectionMint: parsed.collectionMint,
     };
-  } catch {
-    return { usedMints: {}, usedSignatures: {} };
+  } catch (e) {
+    console.error("[verify] ledger corrupted", e);
+    backupCorruptedLedger();
+    throw new Error("Ledger corrupted - minting halted for safety");
   }
 }
 
 function saveLedger(ledger: Ledger) {
   fs.mkdirSync(path.dirname(LEDGER_PATH), { recursive: true });
-  fs.writeFileSync(LEDGER_PATH, JSON.stringify(ledger, null, 2));
+  const tmpPath = `${LEDGER_PATH}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(ledger, null, 2));
+  fs.renameSync(tmpPath, LEDGER_PATH);
 }
 
 function getTierCounts(ledger: Ledger): Record<TierId, number> {
@@ -192,10 +274,81 @@ async function ownsMint(connection: Connection, owner: PublicKey, mint: PublicKe
   return false;
 }
 
+function hasPngMagic(buf: Buffer) {
+  return buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+}
+
+function hasJpegMagic(buf: Buffer) {
+  return buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xd8;
+}
+
+function hasGifMagic(buf: Buffer) {
+  return buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46;
+}
+
+function hasWebpMagic(buf: Buffer) {
+  return buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP";
+}
+
+function mimeMatchesBuffer(mime: string, data: Buffer) {
+  if (mime === "image/png") return hasPngMagic(data);
+  if (mime === "image/jpeg") return hasJpegMagic(data);
+  if (mime === "image/gif") return hasGifMagic(data);
+  if (mime === "image/webp") return hasWebpMagic(data);
+  return false;
+}
+
 function parseDataUrl(dataUrl: string) {
   const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
   if (!match) return null;
-  return { mime: match[1] || "image/png", data: Buffer.from(match[2], "base64") };
+  const mime = match[1] || "image/png";
+  if (!ALLOWED_IMAGE_MIMES.has(mime)) return null;
+  const base64 = match[2];
+  if (base64.length > MAX_IMAGE_BYTES * 1.37) return null;
+  const data = Buffer.from(base64, "base64");
+  if (data.length > MAX_IMAGE_BYTES) return null;
+  if (!mimeMatchesBuffer(mime, data)) return null;
+  return { mime, data };
+}
+
+function isPrivateHost(hostname: string) {
+  if (!hostname) return true;
+  if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.endsWith(".local")) return true;
+  const ipType = net.isIP(hostname);
+  if (ipType === 4) {
+    const parts = hostname.split(".").map((p) => Number(p));
+    if (parts[0] === 10) return true;
+    if (parts[0] === 127) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  }
+  if (ipType === 6) {
+    const lower = hostname.toLowerCase();
+    if (lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd")) return true;
+  }
+  return false;
+}
+
+function isAllowedImageUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    if (isPrivateHost(parsed.hostname)) return false;
+    if (!ALLOWED_IMAGE_HOSTS.length) return true;
+    return ALLOWED_IMAGE_HOSTS.some(
+      (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function normalizeImageUrl(url: string) {
+  if (url.startsWith("ipfs://")) {
+    return `https://ipfs.io/ipfs/${url.replace("ipfs://", "")}`;
+  }
+  return url;
 }
 
 async function loadImageBuffer(imageDataUrl?: string, imageUrl?: string) {
@@ -204,10 +357,18 @@ async function loadImageBuffer(imageDataUrl?: string, imageUrl?: string) {
     if (parsed) return { buffer: parsed.data, mime: parsed.mime };
   }
   if (imageUrl) {
-    const res = await fetch(imageUrl);
+    const normalized = normalizeImageUrl(imageUrl);
+    if (!isAllowedImageUrl(normalized)) throw new Error("Invalid image URL");
+    const res = await fetch(normalized, { redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) throw new Error("Image URL redirects are not allowed");
     if (!res.ok) throw new Error("Failed to fetch image URL");
-    const mime = res.headers.get("content-type") || "image/png";
+    const mime = (res.headers.get("content-type") || "image/png").split(";")[0].trim();
+    if (!ALLOWED_IMAGE_MIMES.has(mime)) throw new Error("Unsupported image mime type");
+    const contentLength = Number(res.headers.get("content-length") || 0);
+    if (contentLength && contentLength > MAX_IMAGE_BYTES) throw new Error("Image too large");
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error("Image too large");
+    if (!mimeMatchesBuffer(mime, buf)) throw new Error("Image data did not match mime type");
     return { buffer: buf, mime };
   }
   throw new Error("Missing remix image");
@@ -220,8 +381,6 @@ async function uploadToPinata(opts: {
   imageMime: string;
   attributes: Array<{ trait_type: string; value: string }>;
 }) {
-  if (!PINATA_JWT) throw new Error("Missing PINATA_JWT env var");
-
   const uploadFile = async (filename: string, mime: string, buffer: Buffer) => {
     const form = new FormData();
     const blob = new Blob([buffer], { type: mime });
@@ -320,162 +479,209 @@ async function mintStandardNft(params: {
   return nft.address.toBase58();
 }
 
+function getFeePayer(tx: any) {
+  const keys = tx?.transaction?.message?.accountKeys;
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  const first = keys[0];
+  return first?.pubkey ? first.pubkey.toBase58() : first?.toBase58?.();
+}
+
+function verifyPaymentInstruction(tx: any, payer: PublicKey, treasury: PublicKey, expectedLamports: bigint) {
+  const instructions = tx?.transaction?.message?.instructions || [];
+  for (const ix of instructions) {
+    const program = ix?.program || ix?.programId?.toBase58?.();
+    if (program !== "system" && program !== SystemProgram.programId.toBase58()) continue;
+    if (ix?.parsed?.type !== "transfer") continue;
+    const info = ix?.parsed?.info;
+    if (!info) continue;
+    if (info.source !== payer.toBase58()) continue;
+    if (info.destination !== treasury.toBase58()) continue;
+    const lamports = BigInt(info.lamports || 0);
+    if (lamports >= expectedLamports) return true;
+  }
+  return false;
+}
+
 export async function POST(req: Request) {
+  if (!rateLimit(req, "verify", 10, 60_000)) return rateLimitResponse();
+
+  const contentLength = Number(req.headers.get("content-length") || 0);
+  if (contentLength && contentLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "Request too large" }, { status: 413 });
+  }
+
+  let body: {
+    signature?: string;
+    payer?: string;
+    machine?: Machine;
+    originalMint?: string;
+    imageDataUrl?: string;
+    imageUrl?: string;
+    name?: string;
+  };
+
   try {
-    if (!TREASURY) return NextResponse.json({ error: "Missing TREASURY_WALLET env var" }, { status: 500 });
-    if (!isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
-      return NextResponse.json({ error: "Invalid GOR_LAMPORTS" }, { status: 500 });
-    }
+    body = (await req.json()) as typeof body;
+  } catch (e) {
+    console.error("[verify] invalid json", e);
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    const body = (await req.json()) as {
-      signature?: string;
-      payer?: string;
-      machine?: Machine;
-      originalMint?: string;
-      imageDataUrl?: string;
-      imageUrl?: string;
-      name?: string;
-    };
+  const sig = body?.signature?.trim();
+  const payerStr = body?.payer?.trim();
+  const machine = body?.machine as Machine;
+  const originalMint = body?.originalMint?.trim();
+  const imageDataUrl = body?.imageDataUrl;
+  const imageUrl = body?.imageUrl;
 
-    const sig = body?.signature?.trim();
-    const payerStr = body?.payer?.trim();
-    const machine = body?.machine as Machine;
-    const originalMint = body?.originalMint?.trim();
-    const imageDataUrl = body?.imageDataUrl;
-    const imageUrl = body?.imageUrl;
-    if (!sig) return NextResponse.json({ error: "Missing signature" }, { status: 400 });
-    if (!payerStr) return NextResponse.json({ error: "Missing payer" }, { status: 400 });
-    if (!originalMint) return NextResponse.json({ error: "Missing originalMint" }, { status: 400 });
-    if (!machine || !["CONVEYOR", "COMPACTOR", "HAZMAT"].includes(machine)) {
-      return NextResponse.json({ error: "Invalid machine" }, { status: 400 });
-    }
+  if (!sig || !isValidSignature(sig)) return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  if (!payerStr || !isValidPublicKey(payerStr)) return NextResponse.json({ error: "Invalid payer" }, { status: 400 });
+  if (!originalMint || !isValidPublicKey(originalMint)) {
+    return NextResponse.json({ error: "Invalid originalMint" }, { status: 400 });
+  }
+  if (!machine || !["CONVEYOR", "COMPACTOR", "HAZMAT"].includes(machine)) {
+    return NextResponse.json({ error: "Invalid machine" }, { status: 400 });
+  }
+  if (!imageDataUrl && !imageUrl) {
+    return NextResponse.json({ error: "Missing remix image" }, { status: 400 });
+  }
 
-    const ledger = loadLedger();
-    if (ledger.usedMints[originalMint]) {
-      return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
-    }
-    if (ledger.usedSignatures[sig]) {
-      return NextResponse.json({ error: "Signature already used" }, { status: 409 });
-    }
+  if (inFlightSignatures.has(sig) || inFlightMints.has(originalMint)) {
+    return NextResponse.json({ error: "This request is already being processed" }, { status: 409 });
+  }
 
-    const payer = new PublicKey(payerStr);
-    const treasury = new PublicKey(TREASURY);
+  inFlightSignatures.add(sig);
+  inFlightMints.add(originalMint);
 
-    const connection = new Connection(RPC, "confirmed");
-    const tx = await connection.getParsedTransaction(sig, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
+  try {
+    return await withLedgerLock(async () => {
+      const ledger = loadLedger();
+      if (ledger.usedMints[originalMint]) {
+        return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
+      }
+      if (ledger.usedSignatures[sig]) {
+        return NextResponse.json({ error: "Signature already used" }, { status: 409 });
+      }
 
-    if (!tx) return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
-    if (tx.meta?.err) return NextResponse.json({ error: "Payment transaction failed" }, { status: 400 });
+      const payer = new PublicKey(payerStr);
+      const treasury = new PublicKey(TREASURY);
 
-    const accountKeys = tx.transaction.message.accountKeys?.map((k: any) =>
-      k?.pubkey ? k.pubkey.toBase58() : k?.toBase58?.()
-    );
-    const payerInKeys = Array.isArray(accountKeys) && accountKeys.includes(payer.toBase58());
-    if (!payerInKeys) {
-      return NextResponse.json({ error: "Payer not found in transaction account keys" }, { status: 400 });
-    }
+      const connection = new Connection(RPC, "confirmed");
+      const tx = await connection.getParsedTransaction(sig, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      });
 
-    const delta = getLamportDelta(tx, treasury);
-    if (delta === null) {
-      return NextResponse.json({ error: "Transaction missing balance metadata" }, { status: 400 });
-    }
+      if (!tx) {
+        return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
+      }
+      if (tx.meta?.err) {
+        return NextResponse.json({ error: "Payment transaction failed" }, { status: 400 });
+      }
 
-    const expected = toLamports(priceFor(machine));
-    if (delta !== expected) {
-      return NextResponse.json(
-        {
-          error: "Payment verification failed (wrong amount)",
-          expectedLamports: expected.toString(),
-          gotLamports: delta.toString(),
-        },
-        { status: 400 }
-      );
-    }
+      const feePayer = getFeePayer(tx);
+      if (!feePayer || feePayer !== payer.toBase58()) {
+        return NextResponse.json({ error: "Payer is not the fee payer for this transaction" }, { status: 400 });
+      }
 
-    const owns = await ownsMint(connection, payer, new PublicKey(originalMint));
-    if (!owns) {
-      return NextResponse.json({ error: "Payer does not own the selected NFT" }, { status: 403 });
-    }
+      if (Number.isFinite(MAX_TX_SLOT_AGE) && tx.slot !== null && tx.slot !== undefined) {
+        const currentSlot = await connection.getSlot("confirmed");
+        if (currentSlot - tx.slot > MAX_TX_SLOT_AGE) {
+          return NextResponse.json({ error: "Transaction too old. Please submit a new payment." }, { status: 400 });
+        }
+      }
 
-    const treasuryBalanceBefore = await connection.getBalance(treasury, "confirmed");
-    const caps = getTierCaps();
-    const counts = getTierCounts(ledger);
-    const tier = rollTier(machine, sig, counts, caps);
-    if (counts[tier] >= caps[tier]) {
-      return NextResponse.json({ error: "This tier is sold out" }, { status: 409 });
-    }
-    const effect = pickEffectFromTier(tier, sig);
+      const expected = toLamports(priceFor(machine));
+      if (!verifyPaymentInstruction(tx, payer, treasury, expected)) {
+        return NextResponse.json({ error: "Payment verification failed" }, { status: 400 });
+      }
 
-    const image = await loadImageBuffer(imageDataUrl, imageUrl);
-    const nextCount = (ledger.mintCount ?? 0) + 1;
-    const remixName = `TrashTech ${String(nextCount).padStart(3, "0")}`;
-    const description =
-      "Stamped in the Gorbage Factory — a fresh TrashTech output packed with grime, glow, and hazard‑grade polish.";
+      const owns = await ownsMint(connection, payer, new PublicKey(originalMint));
+      if (!owns) {
+        return NextResponse.json({ error: "Payer does not own the selected NFT" }, { status: 403 });
+      }
 
-    const attributes = [
-      { trait_type: "Collection", value: "TrashTech" },
-      { trait_type: "Machine", value: machine },
-      { trait_type: "Tier", value: tier },
-      { trait_type: "Primary Effect", value: effect.primary },
-      { trait_type: "Texture", value: effect.texture },
-      { trait_type: "Glow", value: effect.glow },
-      { trait_type: "Edge", value: effect.edge },
-    ];
+      const treasuryBalanceBefore = await connection.getBalance(treasury, "confirmed");
+      const caps = getTierCaps();
+      const counts = getTierCounts(ledger);
+      const tier = rollTier(machine, sig, counts, caps);
+      if (counts[tier] >= caps[tier]) {
+        return NextResponse.json({ error: "This tier is sold out" }, { status: 409 });
+      }
+      const effect = pickEffectFromTier(tier, sig);
 
-    const metadataUrl = await uploadToPinata({
-      name: remixName,
-      description,
-      imageBuffer: image.buffer,
-      imageMime: image.mime,
-      attributes,
-    });
+      const image = await loadImageBuffer(imageDataUrl, imageUrl);
+      const nextCount = (ledger.mintCount ?? 0) + 1;
+      const remixName = `TrashTech ${String(nextCount).padStart(3, "0")}`;
+      const description =
+        "Stamped in the Gorbage Factory — a fresh TrashTech output packed with grime, glow, and hazard‑grade polish.";
 
-    const payerKeypair = loadKeypair();
-    const collectionMint = await ensureCollection({ connection, payer: payerKeypair, ledger });
-    const minted = await mintStandardNft({
-      connection,
-      payer: payerKeypair,
-      owner: payer,
-      name: remixName,
-      metadataUrl,
-      collectionMint,
-    });
-    const treasuryBalanceAfter = await connection.getBalance(treasury, "confirmed");
-    const mintCostLamports = Math.max(0, treasuryBalanceBefore - treasuryBalanceAfter);
+      const attributes = [
+        { trait_type: "Collection", value: "TrashTech" },
+        { trait_type: "Machine", value: machine },
+        { trait_type: "Tier", value: tier },
+        { trait_type: "Primary Effect", value: effect.primary },
+        { trait_type: "Texture", value: effect.texture },
+        { trait_type: "Glow", value: effect.glow },
+        { trait_type: "Edge", value: effect.edge },
+      ];
 
-    const entry: LedgerEntry = {
-      originalMint,
-      mintedMint: minted,
-      signature: sig,
-      payer: payer.toBase58(),
-      machine,
-      tier,
-      createdAt: new Date().toISOString(),
-    };
-    ledger.usedMints[originalMint] = entry;
-    ledger.usedSignatures[sig] = originalMint;
-    ledger.lastMintCostLamports = String(mintCostLamports);
-    ledger.mintCount = nextCount;
-    saveLedger(ledger);
+      const metadataUrl = await uploadToPinata({
+        name: sanitizeName(remixName),
+        description,
+        imageBuffer: image.buffer,
+        imageMime: image.mime,
+        attributes,
+      });
 
-    return NextResponse.json({
-      ok: true,
-      signature: sig,
-      payer: payer.toBase58(),
-      treasury: treasury.toBase58(),
-      machine,
-      tier,
-      effect: effect.primary,
-      texture: effect.texture,
-      glow: effect.glow,
-      edge: effect.edge,
-      metadataUrl,
-      minted,
+      const payerKeypair = loadKeypair();
+      const collectionMint = await ensureCollection({ connection, payer: payerKeypair, ledger });
+      const minted = await mintStandardNft({
+        connection,
+        payer: payerKeypair,
+        owner: payer,
+        name: remixName,
+        metadataUrl,
+        collectionMint,
+      });
+      const treasuryBalanceAfter = await connection.getBalance(treasury, "confirmed");
+      const mintCostLamports = Math.max(0, treasuryBalanceBefore - treasuryBalanceAfter);
+
+      const entry: LedgerEntry = {
+        originalMint,
+        mintedMint: minted,
+        signature: sig,
+        payer: payer.toBase58(),
+        machine,
+        tier,
+        createdAt: new Date().toISOString(),
+      };
+      ledger.usedMints[originalMint] = entry;
+      ledger.usedSignatures[sig] = originalMint;
+      ledger.lastMintCostLamports = String(mintCostLamports);
+      ledger.mintCount = nextCount;
+      saveLedger(ledger);
+
+      return NextResponse.json({
+        ok: true,
+        signature: sig,
+        payer: payer.toBase58(),
+        treasury: treasury.toBase58(),
+        machine,
+        tier,
+        effect: effect.primary,
+        texture: effect.texture,
+        glow: effect.glow,
+        edge: effect.edge,
+        metadataUrl,
+        minted,
+      });
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Verification failed" }, { status: 500 });
+    console.error("[/api/verify] error", e);
+    return NextResponse.json({ error: "Verification failed. Please try again." }, { status: 500 });
+  } finally {
+    inFlightSignatures.delete(sig || "");
+    inFlightMints.delete(originalMint || "");
   }
 }

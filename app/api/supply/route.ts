@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { rateLimit, rateLimitResponse } from "../_lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -21,13 +22,15 @@ function loadTierCounts(): { tier1: number; tier2: number; tier3: number } {
       if (tier && (tier in counts)) (counts as any)[tier] += 1;
     }
     return counts;
-  } catch {
-    return { tier1: 0, tier2: 0, tier3: 0 };
+  } catch (e) {
+    console.error("[/api/supply] ledger parse failed", e);
+    throw new Error("Ledger corrupted");
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    if (!rateLimit(req, "supply", 60, 60_000)) return rateLimitResponse();
     const counts = loadTierCounts();
     const caps = { tier1: TIER1_CAP, tier2: TIER2_CAP, tier3: TIER3_CAP };
     const supply = {
@@ -39,6 +42,7 @@ export async function GET() {
     };
     return NextResponse.json({ ok: true, supply });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to load supply" }, { status: 500 });
+    console.error("[/api/supply] error", e);
+    return NextResponse.json({ error: "Failed to load supply" }, { status: 500 });
   }
 }

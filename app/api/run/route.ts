@@ -2,13 +2,24 @@ import { NextResponse } from "next/server";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import fs from "fs";
 import path from "path";
+import { rateLimit, rateLimitResponse } from "../_lib/rateLimit";
 
 export const runtime = "nodejs";
 
 type Machine = "CONVEYOR" | "COMPACTOR" | "HAZMAT";
 
-const TREASURY = process.env.TREASURY_WALLET;
+function requireEnv(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+const TREASURY = requireEnv("TREASURY_WALLET");
 const GOR_LAMPORTS = Number(process.env.GOR_LAMPORTS ?? LAMPORTS_PER_SOL);
+
+if (!Number.isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
+  throw new Error("Invalid GOR_LAMPORTS configuration");
+}
 
 // New pricing: $5 / $7 / $9 => 2500 / 3500 / 4500 $GOR
 const PRICE_CONVEYOR_RAW = process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "2500";
@@ -27,8 +38,9 @@ function loadLastMintCostLamports(): number | null {
     const parsed = JSON.parse(raw);
     const val = Number(parsed?.lastMintCostLamports ?? 0);
     return Number.isFinite(val) && val > 0 ? val : null;
-  } catch {
-    return null;
+  } catch (e) {
+    console.error("[/api/run] ledger parse failed", e);
+    throw new Error("Ledger corrupted");
   }
 }
 
@@ -44,8 +56,9 @@ function loadTierCounts(): { tier1: number; tier2: number; tier3: number } {
       if (tier && (tier in counts)) (counts as any)[tier] += 1;
     }
     return counts;
-  } catch {
-    return { tier1: 0, tier2: 0, tier3: 0 };
+  } catch (e) {
+    console.error("[/api/run] ledger parse failed", e);
+    throw new Error("Ledger corrupted");
   }
 }
 
@@ -65,6 +78,7 @@ function priceFor(machine: Machine) {
 
 export async function POST(req: Request) {
   try {
+    if (!rateLimit(req, "run", 30, 60_000)) return rateLimitResponse();
     if (!TREASURY) return NextResponse.json({ error: "Missing TREASURY_WALLET env var" }, { status: 500 });
     if (!isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
       return NextResponse.json({ error: "Invalid GOR_LAMPORTS" }, { status: 500 });
@@ -100,6 +114,7 @@ export async function POST(req: Request) {
       amountLamports, // base units (string)
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to create quote" }, { status: 500 });
+    console.error("[/api/run] error", e);
+    return NextResponse.json({ error: "Failed to create quote" }, { status: 500 });
   }
 }

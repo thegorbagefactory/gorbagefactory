@@ -1,6 +1,8 @@
 node_modules
 .next
 .env.local
+.env.local.txt
+.env*.local
 .DS_Store
 secrets
 data
