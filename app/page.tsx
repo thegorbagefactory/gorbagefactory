@@ -322,11 +322,12 @@ async function connectBackpack(): Promise<string> {
   return pk.toString();
 }
 
-async function fetchDas<T>(method: string, params: any): Promise<T> {
+async function fetchDas<T>(method: string, params: any, signal?: AbortSignal): Promise<T> {
   const res = await fetch(DAS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: '1', method, params }),
+    signal,
   });
   const data = (await res.json()) as DasResponse<T>;
   if (data?.error?.message) throw new Error(data.error.message);
@@ -686,12 +687,21 @@ export default function Page() {
     setLoadingNfts(true);
     setStatus(`Loading NFTs for ${owner.slice(0, 6)}…`);
     try {
+      const timeoutMs = 6500;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
       // DAS getAssetsByOwner
-      const result: any = await fetchDas('getAssetsByOwner', {
-        ownerAddress: owner,
-        page: 1,
-        limit: 50,
-      });
+      const result: any = await fetchDas(
+        'getAssetsByOwner',
+        {
+          ownerAddress: owner,
+          page: 1,
+          limit: 50,
+        },
+        controller.signal
+      );
+      window.clearTimeout(timer);
 
       const items: DasAsset[] = result?.items || result?.assets || [];
       const usable = items.filter((a) => pickImage(a));
@@ -724,7 +734,12 @@ export default function Page() {
       if (!selected && assets[0]) setSelected(assets[0]);
       setStatus(assets.length ? 'Select an NFT to remix.' : 'No NFTs found for this wallet on Gorbagana.');
     } catch (e: any) {
-      setStatus(e?.message ?? 'Failed to load NFTs.');
+      const msg = String(e?.message || e || '').toLowerCase();
+      if (msg.includes('aborted') || msg.includes('abort')) {
+        setStatus('NFT index is slow. Tap “Load Wallet NFTs” to retry.');
+      } else {
+        setStatus(e?.message ?? 'Failed to load NFTs.');
+      }
     } finally {
       setLoadingNfts(false);
     }
@@ -799,6 +814,7 @@ export default function Page() {
           try {
             let sig = '';
             if (provider?.signAndSendTransaction) {
+              const { blockhash } = await connection.getLatestBlockhash('processed');
               const tx = new Transaction().add(
                 SystemProgram.transfer({
                   fromPubkey: payer,
@@ -807,6 +823,7 @@ export default function Page() {
                 })
               );
               tx.feePayer = payer;
+              tx.recentBlockhash = blockhash;
               setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
               try {
                 const res = await provider.signAndSendTransaction(tx);
