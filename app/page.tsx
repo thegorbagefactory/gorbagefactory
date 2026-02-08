@@ -345,6 +345,7 @@ export default function Page() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const imgUrlRef = useRef<string>('');
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const beltRef = useRef<HTMLDivElement | null>(null);
   const beltBackRef = useRef<HTMLDivElement | null>(null);
   const beltTrashRef = useRef<HTMLDivElement | null>(null);
@@ -453,8 +454,10 @@ export default function Page() {
     setEffectCycle(0);
   }, [machine, selected?.id]);
 
+  const isScrollingRef = useRef(false);
   useEffect(() => {
     let raf = 0;
+    let lastFrame = 0;
     const start = performance.now();
     const belt = beltRef.current;
     const beltBack = beltBackRef.current;
@@ -470,6 +473,15 @@ export default function Page() {
     const trashBackEls = beltTrashBack ? Array.from(beltTrashBack.querySelectorAll('span')) : [];
 
     const loop = (now: number) => {
+      if (document.hidden || isScrollingRef.current) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      if (now - lastFrame < 33) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      lastFrame = now;
       const t = (now - start) / 1000;
 
       if (belt) {
@@ -560,6 +572,23 @@ export default function Page() {
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect(() => {
+    let timer: number | null = null;
+    const onScroll = () => {
+      isScrollingRef.current = true;
+      rootRef.current?.classList.add('is-scrolling');
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        isScrollingRef.current = false;
+        rootRef.current?.classList.remove('is-scrolling');
+      }, 140);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (timer) window.clearTimeout(timer);
+    };
   }, []);
   const textureClass = useMemo(() => {
     const map: Record<string, string> = {
@@ -880,7 +909,7 @@ export default function Page() {
   }
 
   return (
-    <div className="gf-root">
+    <div className="gf-root" ref={rootRef}>
       <div className="gf-bg">
         <div className="gf-bgGlow gf-bgGlowA" />
         <div className="gf-bgGlow gf-bgGlowB" />
@@ -1438,6 +1467,13 @@ export default function Page() {
           box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25);
           opacity: 0.75;
           animation: none;
+        }
+        .gf-root.is-scrolling .gf-beltTreads,
+        .gf-root.is-scrolling .gf-beltTrash span,
+        .gf-root.is-scrolling .gf-compactorTop,
+        .gf-root.is-scrolling .gf-compactorPressPlate,
+        .gf-root.is-scrolling .gf-pressBale {
+          will-change: auto;
         }
         .gf-beltTrash .t1 { left: 8%; top: 14px; width: 34px; height: 26px; transform: rotate(-6deg); }
         .gf-beltTrash .t2 { left: 28%; top: 30px; width: 28px; height: 22px; transform: rotate(8deg); }
@@ -3342,6 +3378,10 @@ export default function Page() {
           }
         }
         @media (max-width: 720px) {
+          .gf-introRight {
+            width: 100%;
+            justify-items: center;
+          }
           .gf-header {
             position: static;
             padding: 14px 16px;
@@ -3387,10 +3427,11 @@ export default function Page() {
             text-align: center;
           }
           .gf-compactor {
-            width: 260px;
-            height: 220px;
+            width: 100%;
+            height: 240px;
           }
           .gf-compactorFrame {
+            margin: 0 auto;
             transform: scale(0.78);
             transform-origin: top center;
           }
