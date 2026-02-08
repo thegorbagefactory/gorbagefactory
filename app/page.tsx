@@ -345,7 +345,6 @@ export default function Page() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const imgUrlRef = useRef<string>('');
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const beltRef = useRef<HTMLDivElement | null>(null);
   const beltBackRef = useRef<HTMLDivElement | null>(null);
   const beltTrashRef = useRef<HTMLDivElement | null>(null);
@@ -454,7 +453,6 @@ export default function Page() {
     setEffectCycle(0);
   }, [machine, selected?.id]);
 
-  const isScrollingRef = useRef(false);
   useEffect(() => {
     let raf = 0;
     let lastFrame = 0;
@@ -472,8 +470,31 @@ export default function Page() {
     const trashEls = beltTrash ? Array.from(beltTrash.querySelectorAll('span')) : [];
     const trashBackEls = beltTrashBack ? Array.from(beltTrashBack.querySelectorAll('span')) : [];
 
+    let beltWidth = beltTrash?.offsetWidth || 0;
+    let beltBackWidth = beltTrashBack?.offsetWidth || 0;
+    let beltTravel = beltWidth ? beltWidth + 240 : 0;
+    let beltBackTravel = beltBackWidth ? beltBackWidth + 240 : 0;
+
+    const updateBeltSizes = () => {
+      beltWidth = beltTrash?.offsetWidth || beltWidth;
+      beltBackWidth = beltTrashBack?.offsetWidth || beltBackWidth;
+      beltTravel = beltWidth ? beltWidth + 240 : beltTravel;
+      beltBackTravel = beltBackWidth ? beltBackWidth + 240 : beltBackTravel;
+    };
+
+    updateBeltSizes();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => updateBeltSizes());
+      if (beltTrash) resizeObserver.observe(beltTrash);
+      if (beltTrashBack) resizeObserver.observe(beltTrashBack);
+    } else {
+      window.addEventListener('resize', updateBeltSizes);
+    }
+
     const loop = (now: number) => {
-      if (document.hidden || isScrollingRef.current) {
+      if (document.hidden) {
         raf = requestAnimationFrame(loop);
         return;
       }
@@ -486,108 +507,93 @@ export default function Page() {
 
       if (belt) {
         const x = -((t * 60) % 640);
-        if (beltTreads) beltTreads.style.transform = `translateX(${x}px)`;
+        if (beltTreads) beltTreads.style.transform = `translate3d(${x}px, 0, 0)`;
       }
       if (beltBack) {
         const x = -((t * 40) % 480);
-        if (beltBackTreads) beltBackTreads.style.transform = `translateX(${x}px)`;
+        if (beltBackTreads) beltBackTreads.style.transform = `translate3d(${x}px, 0, 0)`;
       }
       if (beltTrash) {
-        const w = beltTrash.offsetWidth;
-        const travel = w + 240;
+        if (!beltTravel) updateBeltSizes();
         trashEls.forEach((el) => {
           const base = Number(el.getAttribute('data-base') || '0');
           const speed = Number(el.getAttribute('data-speed') || '18');
           const rot = Number(el.getAttribute('data-rot') || '0');
-          const x = w + 120 - ((t * speed + base * w) % travel);
-          el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
+          const x = beltWidth + 120 - ((t * speed + base * beltWidth) % beltTravel);
+          el.style.transform = `translate3d(${x}px, 0, 0) rotate(${rot}deg)`;
         });
       }
       if (beltTrashBack) {
-        const w = beltTrashBack.offsetWidth;
-        const travel = w + 240;
+        if (!beltBackTravel) updateBeltSizes();
         trashBackEls.forEach((el) => {
           const base = Number(el.getAttribute('data-base') || '0');
           const speed = Number(el.getAttribute('data-speed') || '14');
           const rot = Number(el.getAttribute('data-rot') || '0');
-          const x = w + 120 - ((t * speed + base * w) % travel);
-          el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
+          const x = beltBackWidth + 120 - ((t * speed + base * beltBackWidth) % beltBackTravel);
+          el.style.transform = `translate3d(${x}px, 0, 0) rotate(${rot}deg)`;
         });
       }
-        if (compactorTop) {
-          const phase = (t % 3.6) / 3.6;
-          let press = 0;
-          if (phase < 0.5) {
-            press = phase / 0.5;
-          } else if (phase < 0.7) {
-            press = 1;
-          } else if (phase < 0.9) {
-            press = 1 - (phase - 0.7) / 0.2;
-          } else {
-            press = 0;
-          }
-
-          compactorTop.style.transform = `translateY(${press * 36}px)`;
-          if (compactorPlate) {
-            compactorPlate.style.transform = `translateY(${press * 68}px)`;
-          }
-          if (trashPile) {
-            let pileScaleY = 1 - press * 0.75;
-            let pileScaleX = 1 + press * 0.08;
-            let pileOpacity = 1 - press * 0.4;
-            if (phase > 0.62) {
-              const fade = Math.min((phase - 0.62) / 0.16, 1);
-              pileOpacity = 1 - fade;
-              pileScaleY = Math.max(pileScaleY, 0.22);
-            }
-            if (phase > 0.92) {
-              pileScaleY = 1;
-              pileScaleX = 1;
-              pileOpacity = 1;
-            }
-            trashPile.style.transform = `translateX(-50%) translateY(${press * 8}px) scale(${pileScaleX}, ${pileScaleY})`;
-            trashPile.style.opacity = `${pileOpacity}`;
-          }
-          if (compactorBale) {
-            let baleScale = 0.25;
-            let baleOpacity = 0;
-            let baleLift = 0;
-            if (phase >= 0.62 && phase < 0.82) {
-              const local = (phase - 0.62) / 0.2;
-              baleScale = 0.55 + local * 0.55;
-              baleOpacity = local;
-            } else if (phase >= 0.82 && phase < 0.95) {
-              const local = (phase - 0.82) / 0.13;
-              baleScale = 1.1 - local * 0.15;
-              baleOpacity = 1 - local * 0.7;
-              baleLift = local * 10;
-            }
-            compactorBale.style.transform = `translateY(${press * 12 - baleLift}px) scale(${baleScale})`;
-            compactorBale.style.opacity = `${baleOpacity}`;
-          }
+      if (compactorTop) {
+        const phase = (t % 3.6) / 3.6;
+        let press = 0;
+        if (phase < 0.5) {
+          press = phase / 0.5;
+        } else if (phase < 0.7) {
+          press = 1;
+        } else if (phase < 0.9) {
+          press = 1 - (phase - 0.7) / 0.2;
+        } else {
+          press = 0;
         }
+
+        compactorTop.style.transform = `translate3d(0, ${press * 36}px, 0)`;
+        if (compactorPlate) {
+          compactorPlate.style.transform = `translate3d(0, ${press * 68}px, 0)`;
+        }
+        if (trashPile) {
+          let pileScaleY = 1 - press * 0.75;
+          let pileScaleX = 1 + press * 0.08;
+          let pileOpacity = 1 - press * 0.4;
+          if (phase > 0.62) {
+            const fade = Math.min((phase - 0.62) / 0.16, 1);
+            pileOpacity = 1 - fade;
+            pileScaleY = Math.max(pileScaleY, 0.22);
+          }
+          if (phase > 0.92) {
+            pileScaleY = 1;
+            pileScaleX = 1;
+            pileOpacity = 1;
+          }
+          trashPile.style.transform = `translate3d(-50%, ${press * 8}px, 0) scale(${pileScaleX}, ${pileScaleY})`;
+          trashPile.style.opacity = `${pileOpacity}`;
+        }
+        if (compactorBale) {
+          let baleScale = 0.25;
+          let baleOpacity = 0;
+          let baleLift = 0;
+          if (phase >= 0.62 && phase < 0.82) {
+            const local = (phase - 0.62) / 0.2;
+            baleScale = 0.55 + local * 0.55;
+            baleOpacity = local;
+          } else if (phase >= 0.82 && phase < 0.95) {
+            const local = (phase - 0.82) / 0.13;
+            baleScale = 1.1 - local * 0.15;
+            baleOpacity = 1 - local * 0.7;
+            baleLift = local * 10;
+          }
+          compactorBale.style.transform = `translate3d(0, ${press * 12 - baleLift}px, 0) scale(${baleScale})`;
+          compactorBale.style.opacity = `${baleOpacity}`;
+        }
+      }
 
       raf = requestAnimationFrame(loop);
     };
 
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  useEffect(() => {
-    let timer: number | null = null;
-    const onScroll = () => {
-      isScrollingRef.current = true;
-      rootRef.current?.classList.add('is-scrolling');
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        isScrollingRef.current = false;
-        rootRef.current?.classList.remove('is-scrolling');
-      }, 140);
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
-      window.removeEventListener('scroll', onScroll);
-      if (timer) window.clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (!resizeObserver) window.removeEventListener('resize', updateBeltSizes);
     };
   }, []);
   const textureClass = useMemo(() => {
@@ -909,7 +915,7 @@ export default function Page() {
   }
 
   return (
-    <div className="gf-root" ref={rootRef}>
+    <div className="gf-root">
       <div className="gf-bg">
         <div className="gf-bgGlow gf-bgGlowA" />
         <div className="gf-bgGlow gf-bgGlowB" />
@@ -1468,12 +1474,12 @@ export default function Page() {
           opacity: 0.75;
           animation: none;
         }
-        .gf-root.is-scrolling .gf-beltTreads,
-        .gf-root.is-scrolling .gf-beltTrash span,
-        .gf-root.is-scrolling .gf-compactorTop,
-        .gf-root.is-scrolling .gf-compactorPressPlate,
-        .gf-root.is-scrolling .gf-pressBale {
-          will-change: auto;
+        .gf-beltTreads,
+        .gf-beltTrash span,
+        .gf-compactorTop,
+        .gf-compactorPressPlate,
+        .gf-pressBale {
+          will-change: transform;
         }
         .gf-beltTrash .t1 { left: 8%; top: 14px; width: 34px; height: 26px; transform: rotate(-6deg); }
         .gf-beltTrash .t2 { left: 28%; top: 30px; width: 28px; height: 22px; transform: rotate(8deg); }
