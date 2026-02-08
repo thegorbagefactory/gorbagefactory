@@ -22,7 +22,7 @@ if (!Number.isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
 }
 
 // New pricing: $5 / $7 / $9 => 2500 / 3500 / 4500 $GOR
-const PRICE_CONVEYOR_RAW = process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "2500";
+const PRICE_CONVEYOR_RAW = process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "auto";
 const PRICE_CONVEYOR = Number(PRICE_CONVEYOR_RAW);
 const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "3500");
 const PRICE_HAZMAT = Number(process.env.PRICE_HAZMAT_GOR ?? process.env.PRICE_HAZMAT_GGOR ?? "4500");
