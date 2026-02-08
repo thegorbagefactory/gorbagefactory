@@ -26,6 +26,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
   private _provider: any = null;
   private _pk: PublicKey | null = null;
   private _readyState: WalletReadyState = WalletReadyState.NotDetected;
+  private _connecting = false;
 
   constructor() {
     super();
@@ -45,8 +46,13 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
     return this._pk;
   }
 
+  get connecting() {
+    return this._connecting;
+  }
+
   async connect() {
     try {
+      this._connecting = true;
       this._provider = this._getProvider();
       if (!this._provider) throw new Error("Backpack not found. Install + unlock Backpack extension.");
 
@@ -60,6 +66,8 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
       console.error("[BackpackAdapter.connect] error:", e);
       this.emit("error", e);
       throw e;
+    } finally {
+      this._connecting = false;
     }
   }
 
@@ -70,6 +78,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
     } finally {
       this._provider = null;
       this._pk = null;
+      this._connecting = false;
       this.emit("disconnect");
     }
   }
