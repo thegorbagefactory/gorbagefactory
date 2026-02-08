@@ -3,13 +3,8 @@
 import React, { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import {
-  BaseMessageSignerWalletAdapter,
-  WalletReadyState,
-  WalletName,
-  type TransactionOrVersionedTransaction,
-} from "@solana/wallet-adapter-base";
-import { PublicKey, Connection } from "@solana/web3.js";
+import { BaseMessageSignerWalletAdapter, WalletReadyState, WalletName } from "@solana/wallet-adapter-base";
+import { PublicKey, Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -88,17 +83,13 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
     }
   }
 
-  async signTransaction<T extends TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>>(
-    transaction: T
-  ): Promise<T> {
+  async signTransaction<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T> {
     const p = this._getProvider();
     if (!p?.signTransaction) throw new Error("Backpack provider missing signTransaction");
     return await p.signTransaction(transaction);
   }
 
-  async signAllTransactions<T extends TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>>(
-    transactions: T[]
-  ): Promise<T[]> {
+  async signAllTransactions<T extends Transaction | VersionedTransaction>(transactions: T[]): Promise<T[]> {
     const p = this._getProvider();
     if (!p?.signAllTransactions) throw new Error("Backpack provider missing signAllTransactions");
     return await p.signAllTransactions(transactions);
@@ -112,7 +103,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
   }
 
   async sendTransaction(
-    transaction: TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>,
+    transaction: Transaction | VersionedTransaction,
     connection: Connection,
     options?: any
   ): Promise<string> {
