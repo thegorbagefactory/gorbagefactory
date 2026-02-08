@@ -3341,6 +3341,184 @@ export default function Page() {
             min-height: 320px;
           }
         }
+        @media (max-width: 720px) {
+          .gf-header {
+            position: static;
+            padding: 14px 16px;
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .gf-headerRight {
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+          }
+          .gf-chip {
+            font-size: 11px;
+            padding: 6px 8px;
+          }
+          .gf-title {
+            font-size: 16px;
+          }
+          .gf-subtitle {
+            font-size: 11px;
+          }
+          .gf-main {
+            padding: 16px;
+          }
+          .gf-intro {
+            padding: 18px;
+          }
+          .gf-introTitle {
+            font-size: 30px;
+          }
+          .gf-introCopy {
+            font-size: 13px;
+          }
+          .gf-introNote {
+            font-size: 11px;
+          }
+          .gf-introActions {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .gf-introActions .gf-btn {
+            width: 100%;
+            text-align: center;
+          }
+          .gf-compactor {
+            width: 260px;
+            height: 220px;
+          }
+          .gf-compactorFrame {
+            transform: scale(0.78);
+            transform-origin: top center;
+          }
+          .gf-hero {
+            padding: 14px;
+          }
+          .gf-h1 {
+            font-size: 28px;
+          }
+          .gf-p {
+            font-size: 13px;
+          }
+          .gf-nftGrid {
+            grid-template-columns: 1fr;
+            max-height: 280px;
+          }
+          .gf-previewFrame {
+            min-height: 240px;
+          }
+          .gf-mintBar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .gf-mintCTA {
+            width: 100%;
+          }
+          .gf-tierSectionCompact .gf-tierCard {
+            padding: 12px;
+          }
+          .gf-tierSectionCompact .gf-tierPreview {
+            height: 84px;
+          }
+          .gf-tierFooter {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .gf-tierOdds {
+            align-items: flex-start;
+          }
+          .gf-tierSectionCompact .gf-tierOddsBar,
+          .gf-tierSectionCompact .gf-tierMeterBar {
+            width: 100%;
+          }
+          .gf-supply,
+          .gf-faq,
+          .gf-footer {
+            margin-left: 16px;
+            margin-right: 16px;
+          }
+          .gf-footer {
+            grid-template-columns: 1fr;
+            text-align: center;
+          }
+          .gf-footerLeft,
+          .gf-footerRight {
+            justify-self: center;
+            align-items: center;
+          }
+          .gf-footerRight {
+            justify-items: center;
+          }
+          .gf-footerCenter {
+            order: 2;
+          }
+          .gf-footerLeft {
+            order: 1;
+            flex-direction: column;
+          }
+          .gf-footerRight {
+            order: 3;
+          }
+          .gf-footerText {
+            max-width: none;
+          }
+          .gf-bgGlow {
+            width: 560px;
+            height: 560px;
+          }
+          .gf-belt {
+            bottom: 12%;
+            height: 60px;
+          }
+          .gf-beltBack {
+            bottom: 22%;
+            height: 46px;
+          }
+          .gf-beltTrash {
+            bottom: 18%;
+            height: 40px;
+          }
+          .gf-beltTrashBack {
+            bottom: 28%;
+            height: 30px;
+          }
+        }
+        @media (max-width: 520px) {
+          .gf-title {
+            font-size: 15px;
+          }
+          .gf-subtitle {
+            font-size: 10px;
+          }
+          .gf-introTitle {
+            font-size: 26px;
+          }
+          .gf-h1 {
+            font-size: 24px;
+          }
+          .gf-card {
+            padding: 12px;
+          }
+          .gf-tierCompare {
+            font-size: 10px;
+          }
+          .gf-tierName {
+            font-size: 14px;
+          }
+          .gf-tierDesc {
+            font-size: 11px;
+          }
+          .gf-mintStatusValue {
+            font-size: 12px;
+          }
+          .gf-beltTrash,
+          .gf-beltTrashBack {
+            display: none;
+          }
+        }
       `}</style>
     </div>
   );
