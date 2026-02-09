@@ -502,6 +502,8 @@ function verifyPaymentInstruction(tx: any, payer: PublicKey, treasury: PublicKey
   return false;
 }
 
+const DEBUG_VERIFY = (process.env.DEBUG_VERIFY || "").toLowerCase() === "true";
+
 export async function POST(req: Request) {
   if (!rateLimit(req, "verify", 10, 60_000)) return rateLimitResponse();
 
@@ -679,6 +681,12 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("[/api/verify] error", e);
+    if (DEBUG_VERIFY) {
+      return NextResponse.json(
+        { error: "Verification failed", detail: String(e?.message || e || "Unknown error") },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ error: "Verification failed. Please try again." }, { status: 500 });
   } finally {
     inFlightSignatures.delete(sig || "");
