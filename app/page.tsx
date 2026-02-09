@@ -944,6 +944,18 @@ export default function Page() {
         return (await Promise.race([attempt, timeout])) as any;
       };
 
+      const confirmWithTimeout = async (signature: string, timeoutMs = 25000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const status = await connection.getSignatureStatuses([signature]);
+          const value = status?.value?.[0];
+          if (value?.err) throw new Error('Payment transaction failed to confirm.');
+          if (value?.confirmationStatus === 'confirmed' || value?.confirmationStatus === 'finalized') return;
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        throw new Error('Confirmation timed out. Please try again.');
+      };
+
       const sendWithRetry = async () => {
         const maxAttempts = 4;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -998,13 +1010,7 @@ export default function Page() {
             }
 
             setStatus('Payment sent. Verifying on-chain...');
-            const confirm = await connection.confirmTransaction(
-              { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
-              'confirmed'
-            );
-            if (confirm?.value?.err) {
-              throw new Error('Payment transaction failed to confirm.');
-            }
+            await confirmWithTimeout(sig, 25000);
             return sig;
           } catch (err: any) {
             const msg = String(err?.message || err || '').toLowerCase();
