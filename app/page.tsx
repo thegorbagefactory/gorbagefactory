@@ -346,6 +346,8 @@ async function fetchDasWithTimeout<T>(method: string, params: any, timeoutMs: nu
 }
 
 function pickImage(asset: DasAsset): string | '' {
+  const metaImage = asset?.content?.metadata?.image;
+  if (metaImage) return metaImage;
   const img = asset?.content?.links?.image;
   if (img) return img;
   const files = asset?.content?.files || [];
@@ -727,7 +729,7 @@ export default function Page() {
         const mint = slice[idx++];
         try {
           const asset = (await fetchDasWithTimeout('getAsset', { id: mint }, 4500)) as DasAsset;
-          if (asset && pickImage(asset)) out.push(asset);
+          if (asset) out.push(asset);
         } catch {
           // ignore
         }
@@ -758,7 +760,7 @@ export default function Page() {
         })
         .then((data) => {
           const items: DasAsset[] = data?.items || [];
-          return items.filter((a) => pickImage(a));
+          return items;
         });
 
       const directDasPromise = fetchDasWithTimeout<any>(
@@ -767,7 +769,7 @@ export default function Page() {
         6000
       ).then((result) => {
         const items: DasAsset[] = result?.items || result?.assets || [];
-        return items.filter((a) => pickImage(a));
+        return items;
       });
 
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
@@ -790,10 +792,11 @@ export default function Page() {
       window.clearTimeout(timer);
 
       if (first && first.length) {
+        const withImages = first.filter((a) => pickImage(a));
         setNfts(first);
         writeCachedNfts(owner, first);
         if (!selected && first[0]) setSelected(first[0]);
-        setStatus('Select an NFT to remix.');
+        setStatus(`Select an NFT to remix. (${first.length} found)`);
         return;
       }
 
@@ -812,7 +815,7 @@ export default function Page() {
         setNfts(unique);
         writeCachedNfts(owner, unique);
         if (!selected && unique[0]) setSelected(unique[0]);
-        setStatus('Select an NFT to remix.');
+        setStatus(`Select an NFT to remix. (${unique.length} found)`);
         return;
       }
 
@@ -1195,7 +1198,7 @@ export default function Page() {
 
                 <div className="gf-nftGrid">
                   {nfts.map((a) => {
-                    const img = pickImage(a);
+                    const img = pickImage(a) || '/gorbage-logo.png';
                     const name = a?.content?.metadata?.name || a.id.slice(0, 8);
                     const active = selected?.id === a.id;
                     return (
