@@ -568,22 +568,43 @@ export async function POST(req: Request) {
       const payer = new PublicKey(payerStr);
       const treasury = new PublicKey(TREASURY);
 
-      const connection = new Connection(RPC, "confirmed");
+      const rpcFallbacks =
+        (process.env.GORBAGANA_RPC_FALLBACKS || process.env.NEXT_PUBLIC_GORBAGANA_RPC_FALLBACKS || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      const rpcList = [RPC, ...rpcFallbacks.filter((r) => r !== RPC)];
+
       let tx: any = null;
-      try {
-        tx = await connection.getParsedTransaction(sig, {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 0,
-        });
-      } catch (err: any) {
-        const msg = String(err?.message || err || "").toLowerCase();
+      let connection: Connection | null = null;
+      let lastErr: any = null;
+      for (const rpc of rpcList) {
+        try {
+          const conn = new Connection(rpc, "confirmed");
+          const parsed = await conn.getParsedTransaction(sig, {
+            commitment: "confirmed",
+            maxSupportedTransactionVersion: 0,
+          });
+          if (parsed) {
+            tx = parsed;
+            connection = conn;
+            break;
+          }
+        } catch (err: any) {
+          lastErr = err;
+          const msg = String(err?.message || err || "").toLowerCase();
+          if (msg.includes("block height exceeded") || msg.includes("expired") || msg.includes("not found")) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!tx || !connection) {
+        const msg = String(lastErr?.message || lastErr || "").toLowerCase();
         if (msg.includes("block height exceeded") || msg.includes("expired") || msg.includes("not found")) {
           return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
         }
-        throw err;
-      }
-
-      if (!tx) {
         return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
       }
       if (tx.meta?.err) {
@@ -596,7 +617,7 @@ export async function POST(req: Request) {
       }
 
       if (Number.isFinite(MAX_TX_SLOT_AGE) && tx.slot !== null && tx.slot !== undefined) {
-        const currentSlot = await connection.getSlot("confirmed");
+      const currentSlot = await connection.getSlot("confirmed");
         if (currentSlot - tx.slot > MAX_TX_SLOT_AGE) {
           return NextResponse.json({ error: "Transaction too old. Please submit a new payment." }, { status: 400 });
         }
