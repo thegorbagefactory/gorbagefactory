@@ -741,18 +741,12 @@ export default function Page() {
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
-      const dasPromise = fetchDas(
-        'getAssetsByOwner',
-        {
-          ownerAddress: owner,
-          page: 1,
-          limit: 50,
-        },
-        controller.signal
-      ).then((result: any) => {
-        const items: DasAsset[] = result?.items || result?.assets || [];
-        return items.filter((a) => pickImage(a));
-      });
+      const dasPromise = fetch(`/api/nfts?owner=${owner}`, { signal: controller.signal })
+        .then((res) => res.json())
+        .then((data) => {
+          const items: DasAsset[] = data?.items || [];
+          return items.filter((a) => pickImage(a));
+        });
 
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
         if (!mints.length) return [] as DasAsset[];
