@@ -785,7 +785,7 @@ export default function Page() {
       }
 
       setNfts([]);
-      setStatus('No NFTs found for this wallet on Gorbagana.');
+      setStatus('No NFTs found yet. Retrying…');
     } catch (e: any) {
       const msg = String(e?.message || e || '').toLowerCase();
       if (msg.includes('aborted') || msg.includes('abort')) {
@@ -797,6 +797,33 @@ export default function Page() {
       setLoadingNfts(false);
     }
   }
+
+  const autoRetryRef = useRef<{ owner: string; attempts: number; timer?: number } | null>(null);
+
+  useEffect(() => {
+    if (!wallet) return;
+    if (nfts.length) {
+      if (autoRetryRef.current?.timer) window.clearTimeout(autoRetryRef.current.timer);
+      autoRetryRef.current = null;
+      return;
+    }
+    if (loadingNfts) return;
+
+    const state = autoRetryRef.current;
+    const attempts = state?.owner === wallet ? state.attempts : 0;
+    if (attempts >= 3) return;
+
+    const delay = attempts === 0 ? 1200 : attempts === 1 ? 2200 : 3200;
+    const timer = window.setTimeout(() => {
+      autoRetryRef.current = { owner: wallet, attempts: attempts + 1 };
+      loadNfts(wallet);
+    }, delay);
+    autoRetryRef.current = { owner: wallet, attempts, timer };
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [wallet, nfts.length, loadingNfts]);
 
   async function fetchMintsFromOwner(ownerStr: string): Promise<string[]> {
     const owner = new PublicKey(ownerStr);
