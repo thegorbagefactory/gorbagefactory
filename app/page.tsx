@@ -1574,6 +1574,8 @@ export default function Page() {
           animation: none;
           animation-play-state: running;
           overflow: hidden;
+          will-change: background-position;
+          contain: paint;
         }
         .gf-beltTreads {
           position: absolute;
@@ -1588,6 +1590,7 @@ export default function Page() {
           );
           opacity: 0.6;
           will-change: transform;
+          transform: translateZ(0);
         }
         .gf-belt::before { content: none; }
         .gf-beltBack {
@@ -1604,6 +1607,7 @@ export default function Page() {
           bottom: 22%;
           height: 60px;
           pointer-events: none;
+          contain: paint;
         }
         .gf-beltTrashBack {
           bottom: 34%;
@@ -1621,6 +1625,8 @@ export default function Page() {
           box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25);
           opacity: 0.75;
           animation: none;
+          will-change: transform, opacity;
+          transform: translateZ(0);
         }
         .gf-beltTreads,
         .gf-beltTrash span,
@@ -1628,6 +1634,7 @@ export default function Page() {
         .gf-compactorPressPlate,
         .gf-pressBale {
           will-change: transform;
+          backface-visibility: hidden;
         }
         .gf-beltTrash .t1 { left: 8%; top: 14px; width: 34px; height: 26px; transform: rotate(-6deg); }
         .gf-beltTrash .t2 { left: 28%; top: 30px; width: 28px; height: 22px; transform: rotate(8deg); }
@@ -2242,15 +2249,18 @@ export default function Page() {
           position: relative;
           width: 340px;
           height: 290px;
-          display: grid;
-          align-content: center;
-          justify-items: center;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           gap: 10px;
+          contain: paint;
         }
         .gf-compactorFrame {
           position: relative;
           width: 340px;
           height: 270px;
+          margin: 0 auto;
           border-radius: 20px;
           background: linear-gradient(180deg, rgba(12, 18, 16, 0.95), rgba(6, 10, 8, 0.98));
           border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2260,6 +2270,8 @@ export default function Page() {
           justify-items: center;
           padding-top: 12px;
           overflow: hidden;
+          transform-origin: center top;
+          contain: paint;
         }
         .gf-compactorFrame::before {
           content: '';
@@ -2303,6 +2315,7 @@ export default function Page() {
           border: 1px solid rgba(0, 255, 120, 0.22);
           box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
           will-change: transform;
+          transform: translateZ(0);
         }
         .gf-compactorChamber {
           position: relative;
@@ -2321,6 +2334,7 @@ export default function Page() {
           justify-items: center;
           animation: chamberPulse 3.4s ease-in-out infinite !important;
           box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.7);
+          contain: paint;
         }
         .gf-compactorChamber::before {
           content: '';
@@ -2358,6 +2372,7 @@ export default function Page() {
           border: 1px solid rgba(255, 255, 255, 0.1);
           box-shadow: 0 8px 18px rgba(0, 0, 0, 0.6);
           will-change: transform;
+          transform: translateZ(0);
         }
         .gf-trashPile {
           position: absolute;
