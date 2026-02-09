@@ -433,7 +433,7 @@ export default function Page() {
       return { type: 'progress' as const, label: raw };
     }
     if (raw.startsWith('Minted:')) return { type: 'success' as const, label: 'Trash Successfully Minted.' };
-    return null;
+    return { type: 'error' as const, label: raw };
   }, [status]);
 
   useEffect(() => {
