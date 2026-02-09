@@ -861,6 +861,15 @@ export default function Page() {
       const lamports = Number(quote.amountLamports);
       if (!Number.isFinite(lamports) || lamports <= 0) throw new Error('Invalid payment amount.');
 
+      const signAndSendWithTimeout = async (tx: Transaction, timeoutMs = 12000) => {
+        const attempt = provider?.signAndSendTransaction(tx);
+        if (!attempt) throw new Error('Wallet does not support signAndSendTransaction.');
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Wallet did not respond. Please approve again.')), timeoutMs)
+        );
+        return (await Promise.race([attempt, timeout])) as any;
+      };
+
       const sendWithRetry = async () => {
         const maxAttempts = 4;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -879,10 +888,13 @@ export default function Page() {
               tx.recentBlockhash = blockhash;
               setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
               try {
-                const res = await provider.signAndSendTransaction(tx);
+                const res = await signAndSendWithTimeout(tx);
                 sig = res?.signature || res;
               } catch (err: any) {
                 const msg = String(err?.message || err || '');
+                if (msg.toLowerCase().includes('closed') || msg.toLowerCase().includes('rejected')) {
+                  throw err;
+                }
                 const match = msg.match(/Signature ([1-9A-HJ-NP-Za-km-z]{80,90})/);
                 if (match?.[1]) {
                   sig = match[1];
@@ -924,6 +936,9 @@ export default function Page() {
             return sig;
           } catch (err: any) {
             const msg = String(err?.message || err || '').toLowerCase();
+            if (msg.includes('rejected') || msg.includes('closed')) {
+              throw err;
+            }
             if (msg.includes('block height exceeded') || msg.includes('blockhash not found') || msg.includes('expired')) {
               setStatus('Transaction expired. Please approve again...');
               continue;
