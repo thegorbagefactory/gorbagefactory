@@ -418,23 +418,14 @@ export default function Page() {
   const statusInfo = useMemo(() => {
     const raw = status || '';
     const lower = raw.toLowerCase();
-    if (!raw) return null;
-    if (lower.includes('insufficient')) return { type: 'error' as const, label: raw };
-    if (
-      lower.includes('processing') ||
-      lower.includes('compacting') ||
-      lower.includes('preparing') ||
-      lower.includes('approve payment') ||
-      lower.includes('payment sent') ||
-      lower.includes('finalizing') ||
-      lower.includes('minting') ||
-      lower.includes('verifying')
-    ) {
-      return { type: 'progress' as const, label: raw };
-    }
     if (raw.startsWith('Minted:')) return { type: 'success' as const, label: 'Trash Successfully Minted.' };
-    return { type: 'error' as const, label: raw };
-  }, [status]);
+    if (lower.includes('insufficient')) return { type: 'error' as const, label: raw };
+    if (lower.includes('select an nft') || lower.includes('no trash selected')) {
+      return { type: 'error' as const, label: 'Select an NFT first.' };
+    }
+    if (isMinting) return { type: 'progress' as const, label: 'Compacting your trash…' };
+    return null;
+  }, [status, isMinting]);
 
   useEffect(() => {
     if (!selectedImage) return;
@@ -3401,6 +3392,34 @@ export default function Page() {
           opacity: 0.6;
           background: radial-gradient(circle at 30% 20%, rgba(255, 120, 220, 0.35), transparent 55%),
             radial-gradient(circle at 70% 80%, rgba(0, 255, 200, 0.35), transparent 60%);
+        }
+        .gf-tier-tier2 .gf-previewBurn {
+          opacity: 0.42;
+        }
+        .gf-tier-tier2 .gf-previewDecal {
+          opacity: 0.55;
+        }
+        .gf-tier-tier2 .gf-previewImg {
+          filter: saturate(1.25) contrast(1.15) hue-rotate(8deg) brightness(1.04);
+        }
+        .gf-tier-tier2 .gf-previewColorWash {
+          opacity: 0.35;
+          background: radial-gradient(circle at 25% 25%, rgba(120, 255, 200, 0.22), transparent 55%),
+            radial-gradient(circle at 75% 75%, rgba(255, 160, 120, 0.22), transparent 55%);
+        }
+        .gf-tier-tier1 .gf-previewBurn {
+          opacity: 0.28;
+        }
+        .gf-tier-tier1 .gf-previewDecal {
+          opacity: 0.4;
+        }
+        .gf-tier-tier1 .gf-previewImg {
+          filter: saturate(1.15) contrast(1.08) hue-rotate(4deg) brightness(1.02);
+        }
+        .gf-tier-tier1 .gf-previewColorWash {
+          opacity: 0.22;
+          background: radial-gradient(circle at 30% 20%, rgba(120, 200, 160, 0.18), transparent 55%),
+            radial-gradient(circle at 70% 80%, rgba(120, 160, 200, 0.18), transparent 60%);
         }
         .gf-effectHazmat .gf-previewOverlay {
           background: radial-gradient(circle at 40% 20%, rgba(0, 255, 200, 0.7), transparent 60%),
