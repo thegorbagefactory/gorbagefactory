@@ -949,17 +949,34 @@ export default function Page() {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
             let sig = '';
-            if (provider?.signAndSendTransaction) {
-              const { blockhash } = await connection.getLatestBlockhash('processed');
-              const tx = new Transaction().add(
-                SystemProgram.transfer({
-                  fromPubkey: payer,
-                  toPubkey: treasury,
-                  lamports,
-                })
-              );
-              tx.feePayer = payer;
-              tx.recentBlockhash = blockhash;
+            const latest = await connection.getLatestBlockhash('processed');
+            const tx = new Transaction().add(
+              SystemProgram.transfer({
+                fromPubkey: payer,
+                toPubkey: treasury,
+                lamports,
+              })
+            );
+            tx.feePayer = payer;
+            tx.recentBlockhash = latest.blockhash;
+
+            if (provider?.signTransaction) {
+              const feeInfo = await connection.getFeeForMessage(tx.compileMessage(), 'confirmed');
+              const feeLamports = feeInfo?.value ?? 0;
+              const balance = await connection.getBalance(payer, 'confirmed');
+              if (balance < lamports + feeLamports) {
+                const short = lamports + feeLamports - balance;
+                const shortGor = short / 1_000_000_000;
+                throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
+              }
+              setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
+              const signed = await provider.signTransaction(tx);
+              sig = await connection.sendRawTransaction(signed.serialize(), {
+                skipPreflight: false,
+                maxRetries: 5,
+                preflightCommitment: 'confirmed',
+              });
+            } else if (provider?.signAndSendTransaction) {
               setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
               try {
                 const res = await signAndSendWithTimeout(tx);
@@ -976,37 +993,18 @@ export default function Page() {
                   throw err;
                 }
               }
-            } else if (provider?.signTransaction) {
-              const { blockhash } = await connection.getLatestBlockhash('processed');
-              const tx = new Transaction().add(
-                SystemProgram.transfer({
-                  fromPubkey: payer,
-                  toPubkey: treasury,
-                  lamports,
-                })
-              );
-              tx.recentBlockhash = blockhash;
-              tx.feePayer = payer;
-              const feeInfo = await connection.getFeeForMessage(tx.compileMessage(), 'confirmed');
-              const feeLamports = feeInfo?.value ?? 0;
-              const balance = await connection.getBalance(payer, 'confirmed');
-              if (balance < lamports + feeLamports) {
-                const short = lamports + feeLamports - balance;
-                const shortGor = short / 1_000_000_000;
-                throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
-              }
-              setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-              const signed = await provider.signTransaction(tx);
-              sig = await connection.sendRawTransaction(signed.serialize(), {
-                skipPreflight: false,
-                maxRetries: 5,
-                preflightCommitment: 'confirmed',
-              });
             } else {
               throw new Error('Wallet does not support transaction signing.');
             }
 
             setStatus('Payment sent. Verifying on-chain...');
+            const confirm = await connection.confirmTransaction(
+              { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+              'confirmed'
+            );
+            if (confirm?.value?.err) {
+              throw new Error('Payment transaction failed to confirm.');
+            }
             return sig;
           } catch (err: any) {
             const msg = String(err?.message || err || '').toLowerCase();
