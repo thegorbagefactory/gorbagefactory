@@ -935,24 +935,6 @@ export default function Page() {
       const lamports = Number(quote.amountLamports);
       if (!Number.isFinite(lamports) || lamports <= 0) throw new Error('Invalid payment amount.');
 
-      const confirmWithTimeout = async (signature: string, blockhash: string, lastValidBlockHeight: number, timeoutMs = 45000) => {
-        const start = Date.now();
-        while (Date.now() - start < timeoutMs) {
-          try {
-            const conf = await connection.confirmTransaction(
-              { signature, blockhash, lastValidBlockHeight },
-              'confirmed'
-            );
-            if (!conf?.value?.err) return;
-            throw new Error('Payment transaction failed to confirm.');
-          } catch {
-            // fall through to polling loop
-          }
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-        throw new Error('Confirmation timed out. Please try again.');
-      };
-
       const sendWithRetry = async () => {
         const maxAttempts = 4;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -969,7 +951,10 @@ export default function Page() {
             tx.feePayer = payer;
             tx.recentBlockhash = latest.blockhash;
 
-            if (!provider?.signTransaction) throw new Error('Wallet does not support transaction signing.');
+            const supportsSign = typeof provider?.signTransaction === 'function';
+            const supportsSignAndSend = typeof provider?.signAndSendTransaction === 'function';
+            if (!supportsSign && !supportsSignAndSend) throw new Error('Wallet does not support transaction signing.');
+
             const feeInfo = await connection.getFeeForMessage(tx.compileMessage(), 'confirmed');
             const feeLamports = feeInfo?.value ?? 0;
             const balance = await connection.getBalance(payer, 'confirmed');
@@ -979,15 +964,21 @@ export default function Page() {
               throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
             }
             setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-            const signed = await provider.signTransaction(tx);
-            sig = await connection.sendRawTransaction(signed.serialize(), {
-              skipPreflight: true,
-              maxRetries: 12,
-              preflightCommitment: 'processed',
-            });
+            if (supportsSignAndSend) {
+              const attemptSend = provider.signAndSendTransaction(tx);
+              if (!attemptSend) throw new Error('Wallet did not respond. Please approve again.');
+              const res = (await attemptSend) as any;
+              sig = res?.signature || res;
+            } else {
+              const signed = await provider.signTransaction(tx);
+              sig = await connection.sendRawTransaction(signed.serialize(), {
+                skipPreflight: true,
+                maxRetries: 12,
+                preflightCommitment: 'processed',
+              });
+            }
 
             setStatus('Payment sent. Verifying on-chain...');
-            await confirmWithTimeout(sig, latest.blockhash, latest.lastValidBlockHeight, 45000);
             return sig;
           } catch (err: any) {
             const msg = String(err?.message || err || '').toLowerCase();
@@ -1015,7 +1006,7 @@ export default function Page() {
 
       setStatus('Minting your remix...');
       const verifyWithRetry = async () => {
-        const maxVerify = 6;
+        const maxVerify = 10;
         for (let attempt = 1; attempt <= maxVerify; attempt++) {
           const verifyRes = await fetch('/api/verify', {
             method: 'POST',
@@ -1042,7 +1033,7 @@ export default function Page() {
             errMsg.includes('expired')
           ) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 2500));
             continue;
           }
           throw new Error(`${errorText}${detailText}`);
