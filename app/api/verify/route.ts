@@ -572,7 +572,7 @@ export async function POST(req: Request) {
       let tx: any = null;
       try {
         tx = await connection.getParsedTransaction(sig, {
-          commitment: "confirmed",
+          commitment: "processed",
           maxSupportedTransactionVersion: 0,
         });
       } catch (err: any) {
@@ -596,7 +596,7 @@ export async function POST(req: Request) {
       }
 
       if (Number.isFinite(MAX_TX_SLOT_AGE) && tx.slot !== null && tx.slot !== undefined) {
-        const currentSlot = await connection.getSlot("confirmed");
+        const currentSlot = await connection.getSlot("processed");
         if (currentSlot - tx.slot > MAX_TX_SLOT_AGE) {
           return NextResponse.json({ error: "Transaction too old. Please submit a new payment." }, { status: 400 });
         }

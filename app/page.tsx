@@ -935,23 +935,20 @@ export default function Page() {
       const lamports = Number(quote.amountLamports);
       if (!Number.isFinite(lamports) || lamports <= 0) throw new Error('Invalid payment amount.');
 
-      const signAndSendWithTimeout = async (tx: Transaction, timeoutMs = 12000) => {
-        const attempt = provider?.signAndSendTransaction(tx);
-        if (!attempt) throw new Error('Wallet does not support signAndSendTransaction.');
-        const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Wallet did not respond. Please approve again.')), timeoutMs)
-        );
-        return (await Promise.race([attempt, timeout])) as any;
-      };
-
-      const confirmWithTimeout = async (signature: string, timeoutMs = 25000) => {
+      const confirmWithTimeout = async (signature: string, blockhash: string, lastValidBlockHeight: number, timeoutMs = 45000) => {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
-          const status = await connection.getSignatureStatuses([signature]);
-          const value = status?.value?.[0];
-          if (value?.err) throw new Error('Payment transaction failed to confirm.');
-          if (value?.confirmationStatus === 'confirmed' || value?.confirmationStatus === 'finalized') return;
-          await new Promise((r) => setTimeout(r, 1200));
+          try {
+            const conf = await connection.confirmTransaction(
+              { signature, blockhash, lastValidBlockHeight },
+              'confirmed'
+            );
+            if (!conf?.value?.err) return;
+            throw new Error('Payment transaction failed to confirm.');
+          } catch {
+            // fall through to polling loop
+          }
+          await new Promise((r) => setTimeout(r, 1500));
         }
         throw new Error('Confirmation timed out. Please try again.');
       };
@@ -972,45 +969,25 @@ export default function Page() {
             tx.feePayer = payer;
             tx.recentBlockhash = latest.blockhash;
 
-            if (provider?.signTransaction) {
-              const feeInfo = await connection.getFeeForMessage(tx.compileMessage(), 'confirmed');
-              const feeLamports = feeInfo?.value ?? 0;
-              const balance = await connection.getBalance(payer, 'confirmed');
-              if (balance < lamports + feeLamports) {
-                const short = lamports + feeLamports - balance;
-                const shortGor = short / 1_000_000_000;
-                throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
-              }
-              setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-              const signed = await provider.signTransaction(tx);
-              sig = await connection.sendRawTransaction(signed.serialize(), {
-                skipPreflight: false,
-                maxRetries: 5,
-                preflightCommitment: 'confirmed',
-              });
-            } else if (provider?.signAndSendTransaction) {
-              setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-              try {
-                const res = await signAndSendWithTimeout(tx);
-                sig = res?.signature || res;
-              } catch (err: any) {
-                const msg = String(err?.message || err || '');
-                if (msg.toLowerCase().includes('closed') || msg.toLowerCase().includes('rejected')) {
-                  throw err;
-                }
-                const match = msg.match(/Signature ([1-9A-HJ-NP-Za-km-z]{80,90})/);
-                if (match?.[1]) {
-                  sig = match[1];
-                } else {
-                  throw err;
-                }
-              }
-            } else {
-              throw new Error('Wallet does not support transaction signing.');
+            if (!provider?.signTransaction) throw new Error('Wallet does not support transaction signing.');
+            const feeInfo = await connection.getFeeForMessage(tx.compileMessage(), 'confirmed');
+            const feeLamports = feeInfo?.value ?? 0;
+            const balance = await connection.getBalance(payer, 'confirmed');
+            if (balance < lamports + feeLamports) {
+              const short = lamports + feeLamports - balance;
+              const shortGor = short / 1_000_000_000;
+              throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
             }
+            setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
+            const signed = await provider.signTransaction(tx);
+            sig = await connection.sendRawTransaction(signed.serialize(), {
+              skipPreflight: true,
+              maxRetries: 12,
+              preflightCommitment: 'processed',
+            });
 
             setStatus('Payment sent. Verifying on-chain...');
-            await confirmWithTimeout(sig, 25000);
+            await confirmWithTimeout(sig, latest.blockhash, latest.lastValidBlockHeight, 45000);
             return sig;
           } catch (err: any) {
             const msg = String(err?.message || err || '').toLowerCase();
