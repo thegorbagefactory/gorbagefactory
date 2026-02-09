@@ -1058,7 +1058,12 @@ export default function Page() {
           const errorText = String(verify?.error || 'Mint failed.');
           const detailText = verify?.detail ? ` (${verify.detail})` : '';
           const errMsg = errorText.toLowerCase();
-          if (verifyRes.status === 404 || errMsg.includes('not found')) {
+          if (
+            verifyRes.status === 404 ||
+            errMsg.includes('not found') ||
+            errMsg.includes('block height exceeded') ||
+            errMsg.includes('expired')
+          ) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
             await new Promise((r) => setTimeout(r, 2000));
             continue;

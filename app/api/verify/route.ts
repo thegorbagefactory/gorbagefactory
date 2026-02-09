@@ -569,10 +569,19 @@ export async function POST(req: Request) {
       const treasury = new PublicKey(TREASURY);
 
       const connection = new Connection(RPC, "confirmed");
-      const tx = await connection.getParsedTransaction(sig, {
-        commitment: "confirmed",
-        maxSupportedTransactionVersion: 0,
-      });
+      let tx: any = null;
+      try {
+        tx = await connection.getParsedTransaction(sig, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        });
+      } catch (err: any) {
+        const msg = String(err?.message || err || "").toLowerCase();
+        if (msg.includes("block height exceeded") || msg.includes("expired") || msg.includes("not found")) {
+          return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
+        }
+        throw err;
+      }
 
       if (!tx) {
         return NextResponse.json({ error: "Transaction not found yet. Try again in a moment." }, { status: 404 });
