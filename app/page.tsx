@@ -983,7 +983,7 @@ export default function Page() {
                   15000,
                   'Wallet did not respond. Please approve again.'
                 );
-                sig = await connection.sendRawTransaction(signed.serialize(), {
+                sig = await connection.sendRawTransaction((signed as Transaction).serialize(), {
                   skipPreflight: true,
                   maxRetries: 12,
                   preflightCommitment: 'processed',
