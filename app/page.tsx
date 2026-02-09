@@ -335,6 +335,16 @@ async function fetchDas<T>(method: string, params: any, signal?: AbortSignal): P
   return data.result;
 }
 
+async function fetchDasWithTimeout<T>(method: string, params: any, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchDas<T>(method, params, controller.signal);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function pickImage(asset: DasAsset): string | '' {
   const img = asset?.content?.links?.image;
   if (img) return img;
@@ -716,7 +726,7 @@ export default function Page() {
       while (idx < slice.length) {
         const mint = slice[idx++];
         try {
-          const asset = (await fetchDas('getAsset', { id: mint })) as DasAsset;
+          const asset = (await fetchDasWithTimeout('getAsset', { id: mint }, 4500)) as DasAsset;
           if (asset && pickImage(asset)) out.push(asset);
         } catch {
           // ignore
@@ -748,12 +758,21 @@ export default function Page() {
           return items.filter((a) => pickImage(a));
         });
 
+      const directDasPromise = fetchDasWithTimeout<any>(
+        'getAssetsByOwner',
+        { ownerAddress: owner, page: 1, limit: 50 },
+        6000
+      ).then((result) => {
+        const items: DasAsset[] = result?.items || result?.assets || [];
+        return items.filter((a) => pickImage(a));
+      });
+
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
         if (!mints.length) return [] as DasAsset[];
         return await fetchAssetsByMintIds(mints, 40);
       });
 
-      const first = await Promise.race([dasPromise, tokenPromise]);
+      const first = await Promise.race([dasPromise, directDasPromise, tokenPromise]);
       window.clearTimeout(timer);
 
       if (first.length) {
@@ -764,9 +783,14 @@ export default function Page() {
         return;
       }
 
-      const [dasAssets, tokenAssets] = await Promise.allSettled([dasPromise, tokenPromise]);
+      const [dasAssets, directAssets, tokenAssets] = await Promise.allSettled([
+        dasPromise,
+        directDasPromise,
+        tokenPromise,
+      ]);
       const merged = [
         ...(dasAssets.status === 'fulfilled' ? dasAssets.value : []),
+        ...(directAssets.status === 'fulfilled' ? directAssets.value : []),
         ...(tokenAssets.status === 'fulfilled' ? tokenAssets.value : []),
       ];
       const unique = merged.filter((asset, idx, arr) => arr.findIndex((a) => a.id === asset.id) === idx);
@@ -805,9 +829,9 @@ export default function Page() {
 
     const state = autoRetryRef.current;
     const attempts = state?.owner === wallet ? state.attempts : 0;
-    if (attempts >= 3) return;
+    if (attempts >= 8) return;
 
-    const delay = attempts === 0 ? 1200 : attempts === 1 ? 2200 : 3200;
+    const delay = attempts < 2 ? 900 : attempts < 4 ? 1600 : attempts < 6 ? 2400 : 3200;
     const timer = window.setTimeout(() => {
       autoRetryRef.current = { owner: wallet, attempts: attempts + 1 };
       loadNfts(wallet);
