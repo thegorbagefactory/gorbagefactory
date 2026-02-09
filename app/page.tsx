@@ -38,6 +38,11 @@ const PRICE: Record<Machine, number> = {
   HAZMAT: Number(process.env.NEXT_PUBLIC_PRICE_HAZMAT || '4500'),
 };
 
+const COLLECTION_MINT =
+  process.env.NEXT_PUBLIC_TRASHTECH_COLLECTION_MINT ||
+  process.env.NEXT_PUBLIC_COLLECTION_MINT ||
+  '';
+
 const priceLabel = (machine: Machine) => {
   const value = PRICE[machine];
   if (!Number.isFinite(value) || value <= 0) return 'Mint cost';
@@ -353,6 +358,13 @@ function pickImage(asset: DasAsset): string | '' {
   const files = asset?.content?.files || [];
   const imageFile = files.find((f) => (f?.mime || '').startsWith('image/') && f?.uri);
   return imageFile?.uri || '';
+}
+
+function isCollectionAsset(asset: DasAsset): boolean {
+  if (COLLECTION_MINT && asset?.id === COLLECTION_MINT) return true;
+  const name = asset?.content?.metadata?.name || '';
+  if (name.trim().toLowerCase() === 'trashtech') return true;
+  return false;
 }
 
 export default function Page() {
@@ -742,7 +754,7 @@ export default function Page() {
     if (!hadNfts) setStatus(`Loading NFTs for ${owner.slice(0, 6)}…`);
     let cached: DasAsset[] = [];
     try {
-      cached = readCachedNfts(owner);
+      cached = readCachedNfts(owner).filter((a) => !isCollectionAsset(a));
       if (cached.length) {
         setNfts(cached);
         if (!selected && cached[0]) setSelected(cached[0]);
@@ -791,11 +803,11 @@ export default function Page() {
       window.clearTimeout(timer);
 
       if (first && first.length) {
-        const withImages = first.filter((a) => pickImage(a));
-        setNfts(first);
-        writeCachedNfts(owner, first);
-        if (!selected && first[0]) setSelected(first[0]);
-        setStatus(`Select an NFT to remix. (${first.length} found)`);
+        const filtered = first.filter((a) => !isCollectionAsset(a));
+        setNfts(filtered);
+        writeCachedNfts(owner, filtered);
+        if (!selected && filtered[0]) setSelected(filtered[0]);
+        setStatus(`Select an NFT to remix. (${filtered.length} found)`);
         return;
       }
 
@@ -810,11 +822,12 @@ export default function Page() {
         ...(tokenAssets.status === 'fulfilled' ? tokenAssets.value : []),
       ];
       const unique = merged.filter((asset, idx, arr) => arr.findIndex((a) => a.id === asset.id) === idx);
-      if (unique.length) {
-        setNfts(unique);
-        writeCachedNfts(owner, unique);
-        if (!selected && unique[0]) setSelected(unique[0]);
-        setStatus(`Select an NFT to remix. (${unique.length} found)`);
+      const filtered = unique.filter((a) => !isCollectionAsset(a));
+      if (filtered.length) {
+        setNfts(filtered);
+        writeCachedNfts(owner, filtered);
+        if (!selected && filtered[0]) setSelected(filtered[0]);
+        setStatus(`Select an NFT to remix. (${filtered.length} found)`);
         return;
       }
 
