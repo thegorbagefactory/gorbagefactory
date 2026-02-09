@@ -963,19 +963,48 @@ export default function Page() {
               const shortGor = short / 1_000_000_000;
               throw new Error(`Insufficient $GOR. Add at least ${shortGor.toFixed(6)} $GOR for fees.`);
             }
-            setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-            if (supportsSignAndSend) {
-              const attemptSend = provider.signAndSendTransaction(tx);
-              if (!attemptSend) throw new Error('Wallet did not respond. Please approve again.');
-              const res = (await attemptSend) as any;
-              sig = res?.signature || res;
-            } else {
-              const signed = await provider.signTransaction(tx);
-              sig = await connection.sendRawTransaction(signed.serialize(), {
-                skipPreflight: true,
-                maxRetries: 12,
-                preflightCommitment: 'processed',
+            const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string) => {
+              let timer: number | undefined;
+              const timeout = new Promise<T>((_, reject) => {
+                timer = window.setTimeout(() => reject(new Error(message)), ms);
               });
+              try {
+                return await Promise.race([promise, timeout]);
+              } finally {
+                if (timer) window.clearTimeout(timer);
+              }
+            };
+
+            setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
+            if (supportsSign) {
+              try {
+                const signed = await withTimeout(
+                  provider.signTransaction(tx),
+                  15000,
+                  'Wallet did not respond. Please approve again.'
+                );
+                sig = await connection.sendRawTransaction(signed.serialize(), {
+                  skipPreflight: true,
+                  maxRetries: 12,
+                  preflightCommitment: 'processed',
+                });
+              } catch (err: any) {
+                const msg = String(err?.message || err || '').toLowerCase();
+                if (!supportsSignAndSend || msg.includes('rejected') || msg.includes('closed')) throw err;
+                const res = await withTimeout(
+                  provider.signAndSendTransaction(tx),
+                  15000,
+                  'Wallet did not respond. Please approve again.'
+                );
+                sig = (res as any)?.signature || (res as any);
+              }
+            } else if (supportsSignAndSend) {
+              const res = await withTimeout(
+                provider.signAndSendTransaction(tx),
+                15000,
+                'Wallet did not respond. Please approve again.'
+              );
+              sig = (res as any)?.signature || (res as any);
             }
 
             setStatus('Payment sent. Verifying on-chain...');
@@ -1006,7 +1035,7 @@ export default function Page() {
 
       setStatus('Minting your remix...');
       const verifyWithRetry = async () => {
-        const maxVerify = 10;
+        const maxVerify = 12;
         for (let attempt = 1; attempt <= maxVerify; attempt++) {
           const verifyRes = await fetch('/api/verify', {
             method: 'POST',
@@ -1033,7 +1062,7 @@ export default function Page() {
             errMsg.includes('expired')
           ) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
-            await new Promise((r) => setTimeout(r, 2500));
+            await new Promise((r) => setTimeout(r, 3000));
             continue;
           }
           throw new Error(`${errorText}${detailText}`);
