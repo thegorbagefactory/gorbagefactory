@@ -1051,13 +1051,15 @@ export default function Page() {
           });
           const verify = await verifyRes.json();
           if (verifyRes.ok && verify?.ok) return verify;
-          const errMsg = String(verify?.error || '').toLowerCase();
+          const errorText = String(verify?.error || 'Mint failed.');
+          const detailText = verify?.detail ? ` (${verify.detail})` : '';
+          const errMsg = errorText.toLowerCase();
           if (verifyRes.status === 404 || errMsg.includes('not found')) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
             await new Promise((r) => setTimeout(r, 2000));
             continue;
           }
-          throw new Error(verify?.error || 'Mint failed.');
+          throw new Error(`${errorText}${detailText}`);
         }
         throw new Error('Transaction not found yet. Please try again in a moment.');
       };
