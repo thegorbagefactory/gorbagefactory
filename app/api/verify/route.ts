@@ -425,6 +425,15 @@ async function uploadToPinata(opts: {
 }
 
 async function ensureCollection(params: { connection: Connection; payer: Keypair; ledger: Ledger }) {
+  const envCollection =
+    process.env.TRASHTECH_COLLECTION_MINT ||
+    process.env.COLLECTION_MINT ||
+    process.env.NEXT_PUBLIC_TRASHTECH_COLLECTION_MINT;
+  if (envCollection) {
+    params.ledger.collectionMint = envCollection;
+    saveLedger(params.ledger);
+    return new PublicKey(envCollection);
+  }
   if (params.ledger.collectionMint) return new PublicKey(params.ledger.collectionMint);
 
   const imagePath = path.join(process.cwd(), "public", "gorbage-logo.png");
@@ -707,6 +716,7 @@ export async function POST(req: Request) {
         edge: effect.edge,
         metadataUrl,
         minted,
+        collectionMint: collectionMint.toBase58(),
       });
     });
   } catch (e: any) {
