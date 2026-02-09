@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@metaplex-foundation/js": "^0.20.1",
+    "@supabase/supabase-js": "^2.49.1",
     "@solana/spl-token": "0.4.9",
     "@solana/wallet-adapter-base": "0.9.23",
     "@solana/wallet-adapter-react": "0.15.35",

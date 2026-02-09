@@ -6,6 +6,7 @@ import path from "path";
 import net from "net";
 import { Metaplex, keypairIdentity } from "@metaplex-foundation/js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+import { createClient } from "@supabase/supabase-js";
 import { rateLimit, rateLimitResponse } from "../_lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -31,7 +32,21 @@ type Ledger = {
   collectionMint?: string;
 };
 
-const RPC = process.env.GORBAGANA_RPC_URL || "https://rpc.gorbagana.wtf/";
+const RPC =
+  process.env.GORBAGANA_RPC_URL ||
+  process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL ||
+  process.env.NEXT_PUBLIC_RPC_URL ||
+  "https://rpc.gorbagana.wtf/";
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+const supabase =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+      })
+    : null;
 
 function requireEnv(name: string) {
   const value = process.env[name];
@@ -241,6 +256,103 @@ function saveLedger(ledger: Ledger) {
   const tmpPath = `${LEDGER_PATH}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(ledger, null, 2));
   fs.renameSync(tmpPath, LEDGER_PATH);
+}
+
+type PersistentState = {
+  mintCount: number;
+  collectionMint?: string | null;
+};
+
+async function getPersistentState(): Promise<PersistentState | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("remix_state")
+    .select("mint_count, collection_mint")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase read failed: ${error.message}`);
+  return {
+    mintCount: data?.mint_count ?? 0,
+    collectionMint: data?.collection_mint ?? null,
+  };
+}
+
+async function isMintUsed(originalMint: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from("used_mints")
+    .select("original_mint")
+    .eq("original_mint", originalMint)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase read failed: ${error.message}`);
+  return !!data?.original_mint;
+}
+
+async function isSignatureUsed(signature: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from("used_signatures")
+    .select("signature")
+    .eq("signature", signature)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase read failed: ${error.message}`);
+  return !!data?.signature;
+}
+
+async function getTierCountsPersistent(): Promise<Record<TierId, number> | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("used_mints").select("tier");
+  if (error) throw new Error(`Supabase read failed: ${error.message}`);
+  const counts: Record<TierId, number> = { tier1: 0, tier2: 0, tier3: 0 };
+  for (const row of data || []) {
+    const tier = row?.tier as TierId | undefined;
+    if (tier && counts[tier] !== undefined) counts[tier] += 1;
+  }
+  return counts;
+}
+
+async function persistMint(params: {
+  originalMint: string;
+  mintedMint: string;
+  signature: string;
+  payer: string;
+  machine: Machine;
+  tier: TierId;
+  mintCount: number;
+  collectionMint?: string | null;
+}) {
+  if (!supabase) return;
+  const { error: mintErr } = await supabase.from("used_mints").upsert(
+    {
+      original_mint: params.originalMint,
+      minted_mint: params.mintedMint,
+      signature: params.signature,
+      payer: params.payer,
+      machine: params.machine,
+      tier: params.tier,
+    },
+    { onConflict: "original_mint" }
+  );
+  if (mintErr) throw new Error(`Supabase write failed: ${mintErr.message}`);
+
+  const { error: sigErr } = await supabase.from("used_signatures").upsert(
+    {
+      signature: params.signature,
+      original_mint: params.originalMint,
+    },
+    { onConflict: "signature" }
+  );
+  if (sigErr) throw new Error(`Supabase write failed: ${sigErr.message}`);
+
+  const { error: stateErr } = await supabase.from("remix_state").upsert(
+    {
+      id: 1,
+      mint_count: params.mintCount,
+      collection_mint: params.collectionMint ?? null,
+    },
+    { onConflict: "id" }
+  );
+  if (stateErr) throw new Error(`Supabase write failed: ${stateErr.message}`);
 }
 
 function getTierCounts(ledger: Ledger): Record<TierId, number> {
@@ -567,6 +679,13 @@ export async function POST(req: Request) {
   try {
     return await withLedgerLock(async () => {
       const ledger = loadLedger();
+      const persistent = await getPersistentState();
+      if (await isMintUsed(originalMint)) {
+        return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
+      }
+      if (await isSignatureUsed(sig)) {
+        return NextResponse.json({ error: "Signature already used" }, { status: 409 });
+      }
       if (ledger.usedMints[originalMint]) {
         return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
       }
@@ -644,7 +763,8 @@ export async function POST(req: Request) {
 
       const treasuryBalanceBefore = await connection.getBalance(treasury, "confirmed");
       const caps = getTierCaps();
-      const counts = getTierCounts(ledger);
+      const persistentCounts = await getTierCountsPersistent();
+      const counts = persistentCounts || getTierCounts(ledger);
       const tier = rollTier(machine, sig, counts, caps);
       if (counts[tier] >= caps[tier]) {
         return NextResponse.json({ error: "This tier is sold out" }, { status: 409 });
@@ -652,7 +772,8 @@ export async function POST(req: Request) {
       const effect = pickEffectFromTier(tier, sig);
 
       const image = await loadImageBuffer(imageDataUrl, imageUrl);
-      const nextCount = (ledger.mintCount ?? 0) + 1;
+      const baseCount = persistent?.mintCount ?? ledger.mintCount ?? 0;
+      const nextCount = baseCount + 1;
       const remixName = `TrashTech ${String(nextCount).padStart(3, "0")}`;
       const description =
         "Stamped in the Gorbage Factory — a fresh TrashTech output packed with grime, glow, and hazard‑grade polish.";
@@ -676,6 +797,10 @@ export async function POST(req: Request) {
       });
 
       const payerKeypair = loadKeypair();
+      if (persistent?.collectionMint && !ledger.collectionMint) {
+        ledger.collectionMint = persistent.collectionMint;
+        saveLedger(ledger);
+      }
       const collectionMint = await ensureCollection({ connection, payer: payerKeypair, ledger });
       const minted = await mintStandardNft({
         connection,
@@ -702,6 +827,16 @@ export async function POST(req: Request) {
       ledger.lastMintCostLamports = String(mintCostLamports);
       ledger.mintCount = nextCount;
       saveLedger(ledger);
+      await persistMint({
+        originalMint,
+        mintedMint: minted,
+        signature: sig,
+        payer: payer.toBase58(),
+        machine,
+        tier,
+        mintCount: nextCount,
+        collectionMint: collectionMint.toBase58(),
+      });
 
       return NextResponse.json({
         ok: true,
