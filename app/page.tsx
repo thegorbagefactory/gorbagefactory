@@ -752,7 +752,10 @@ export default function Page() {
       const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
       const dasPromise = fetch(`/api/nfts?owner=${owner}`, { signal: controller.signal })
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error('NFT API failed');
+          return res.json();
+        })
         .then((data) => {
           const items: DasAsset[] = data?.items || [];
           return items.filter((a) => pickImage(a));
@@ -772,10 +775,21 @@ export default function Page() {
         return await fetchAssetsByMintIds(mints, 40);
       });
 
-      const first = await Promise.race([dasPromise, directDasPromise, tokenPromise]);
+      const nonEmpty = (p: Promise<DasAsset[]>) =>
+        p.then((items) => {
+          if (items.length) return items;
+          throw new Error('empty');
+        });
+
+      let first: DasAsset[] | null = null;
+      try {
+        first = await Promise.any([nonEmpty(dasPromise), nonEmpty(directDasPromise), nonEmpty(tokenPromise)]);
+      } catch {
+        first = null;
+      }
       window.clearTimeout(timer);
 
-      if (first.length) {
+      if (first && first.length) {
         setNfts(first);
         writeCachedNfts(owner, first);
         if (!selected && first[0]) setSelected(first[0]);
