@@ -739,11 +739,19 @@ export default function Page() {
     return out;
   }
 
-  async function loadNfts(owner: string) {
+  const lastLoadRef = useRef(0);
+
+  async function loadNfts(owner: string, opts?: { force?: boolean }) {
+    if (nfts.length && !opts?.force) return;
+    const now = Date.now();
+    if (!opts?.force && now - lastLoadRef.current < 4000) return;
+    lastLoadRef.current = now;
     setLoadingNfts(true);
-    setStatus(`Loading NFTs for ${owner.slice(0, 6)}…`);
+    const hadNfts = nfts.length > 0;
+    if (!hadNfts) setStatus(`Loading NFTs for ${owner.slice(0, 6)}…`);
+    let cached: DasAsset[] = [];
     try {
-      const cached = readCachedNfts(owner);
+      cached = readCachedNfts(owner);
       if (cached.length) {
         setNfts(cached);
         if (!selected && cached[0]) setSelected(cached[0]);
@@ -819,14 +827,18 @@ export default function Page() {
         return;
       }
 
-      setNfts([]);
-      setStatus('No NFTs found yet. Retrying…');
+      if (!hadNfts && !cached.length) {
+        setNfts([]);
+        setStatus('No NFTs found yet. Retrying…');
+      } else {
+        setStatus('Using cached NFTs. Refreshing in background…');
+      }
     } catch (e: any) {
       const msg = String(e?.message || e || '').toLowerCase();
       if (msg.includes('aborted') || msg.includes('abort')) {
-        setStatus('NFT index is slow. Still searching…');
+        setStatus(hadNfts || cached.length ? 'Refreshing NFTs…' : 'NFT index is slow. Still searching…');
       } else {
-        setStatus(e?.message ?? 'Failed to load NFTs.');
+        setStatus(hadNfts || cached.length ? 'Refreshing NFTs…' : e?.message ?? 'Failed to load NFTs.');
       }
     } finally {
       setLoadingNfts(false);
@@ -879,7 +891,7 @@ export default function Page() {
   }
 
   useEffect(() => {
-    if (wallet) loadNfts(wallet);
+    if (wallet) loadNfts(wallet, { force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet]);
 
