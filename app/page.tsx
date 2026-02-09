@@ -10,7 +10,7 @@ type TierId = 'tier1' | 'tier2' | 'tier3';
 type DasAsset = {
   id: string;
   content?: {
-    metadata?: { name?: string };
+    metadata?: { name?: string; image?: string };
     links?: { image?: string };
     files?: Array<{ uri?: string; mime?: string }>;
   };
