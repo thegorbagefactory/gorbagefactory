@@ -2785,8 +2785,12 @@ export default function Page() {
           color: rgba(140, 255, 210, 0.9);
         }
         .gf-compareMythic {
-          border-color: rgba(255, 220, 120, 0.45);
-          color: rgba(255, 240, 170, 0.95);
+          color: #0b0b0b;
+          border-color: rgba(255, 255, 255, 0.35);
+          background: linear-gradient(90deg, #ff4d4d, #ffd64d, #5dff8b, #4dd2ff, #b04dff, #ff4dba);
+          background-size: 300% 100%;
+          animation: mythicGlow 5s linear infinite;
+          box-shadow: 0 0 18px rgba(120, 255, 255, 0.35);
         }
         .gf-compareArrow {
           opacity: 0.4;
@@ -3737,6 +3741,9 @@ export default function Page() {
           }
           .gf-introLeft {
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
           }
           .gf-introTitle {
             font-size: 30px;
@@ -3751,12 +3758,14 @@ export default function Page() {
             flex-direction: column;
             align-items: center;
             width: 100%;
+            justify-content: center;
           }
           .gf-introActions .gf-btn {
             width: 100%;
             max-width: 360px;
             margin: 0 auto;
             text-align: center;
+            display: block;
           }
           .gf-compactor {
             width: 100%;
