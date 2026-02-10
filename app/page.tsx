@@ -210,14 +210,7 @@ function drawTrashyOverlays(
     drawHazard(ctx, w * 0.78, h * 0.22, w * 0.2, 'rgba(255,220,120,0.9)');
     drawHazard(ctx, w * 0.2, h * 0.75, w * 0.14, 'rgba(255,220,120,0.7)');
   }
-  if (primary.includes('Dumpster') || primary.includes('Leachate') || primary.includes('Smog') || tier === 'tier3') {
-    drawTrashBag(ctx, w * 0.2, h * 0.75, w * 0.22, h * 0.26, 'rgba(200,200,200,0.6)', 'rgba(30,30,30,0.6)');
-  }
   if (tier === 'tier3') {
-    drawCautionTape(ctx, w, h, 0.55);
-  }
-  if (tier === 'tier3') {
-    drawTrashBag(ctx, w * 0.78, h * 0.68, w * 0.2, h * 0.24, 'rgba(200,200,200,0.5)', 'rgba(20,20,20,0.55)');
     drawGraffiti(ctx, rng, w, h);
   }
   ctx.restore();
