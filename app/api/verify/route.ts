@@ -277,17 +277,6 @@ async function getPersistentState(): Promise<PersistentState | null> {
   };
 }
 
-async function isMintUsed(originalMint: string): Promise<boolean> {
-  if (!supabase) return false;
-  const { data, error } = await supabase
-    .from("used_mints")
-    .select("original_mint")
-    .eq("original_mint", originalMint)
-    .maybeSingle();
-  if (error) throw new Error(`Supabase read failed: ${error.message}`);
-  return !!data?.original_mint;
-}
-
 async function isSignatureUsed(signature: string): Promise<boolean> {
   if (!supabase) return false;
   const { data, error } = await supabase
@@ -301,7 +290,7 @@ async function isSignatureUsed(signature: string): Promise<boolean> {
 
 async function getTierCountsPersistent(): Promise<Record<TierId, number> | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("used_mints").select("tier");
+  const { data, error } = await supabase.from("mint_log").select("tier");
   if (error) throw new Error(`Supabase read failed: ${error.message}`);
   const counts: Record<TierId, number> = { tier1: 0, tier2: 0, tier3: 0 };
   for (const row of data || []) {
@@ -322,17 +311,14 @@ async function persistMint(params: {
   collectionMint?: string | null;
 }) {
   if (!supabase) return;
-  const { error: mintErr } = await supabase.from("used_mints").upsert(
-    {
-      original_mint: params.originalMint,
-      minted_mint: params.mintedMint,
-      signature: params.signature,
-      payer: params.payer,
-      machine: params.machine,
-      tier: params.tier,
-    },
-    { onConflict: "original_mint" }
-  );
+  const { error: mintErr } = await supabase.from("mint_log").insert({
+    signature: params.signature,
+    original_mint: params.originalMint,
+    minted_mint: params.mintedMint,
+    payer: params.payer,
+    machine: params.machine,
+    tier: params.tier,
+  });
   if (mintErr) throw new Error(`Supabase write failed: ${mintErr.message}`);
 
   const { error: sigErr } = await supabase.from("used_signatures").upsert(
@@ -680,14 +666,8 @@ export async function POST(req: Request) {
     return await withLedgerLock(async () => {
       const ledger = loadLedger();
       const persistent = await getPersistentState();
-      if (await isMintUsed(originalMint)) {
-        return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
-      }
       if (await isSignatureUsed(sig)) {
         return NextResponse.json({ error: "Signature already used" }, { status: 409 });
-      }
-      if (ledger.usedMints[originalMint]) {
-        return NextResponse.json({ error: "This NFT already has a remix" }, { status: 409 });
       }
       if (ledger.usedSignatures[sig]) {
         return NextResponse.json({ error: "Signature already used" }, { status: 409 });
