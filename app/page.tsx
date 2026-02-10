@@ -224,6 +224,10 @@ function drawTrashyOverlays(
       const idx = Math.floor(rng() * poolCopy.length);
       picks.push(poolCopy.splice(idx, 1)[0]);
     }
+    if (picks.includes('caution_tape')) {
+      picks.length = 1;
+      picks[0] = 'caution_tape';
+    }
     const alpha = tier === 'tier3' ? 0.9 : tier === 'tier2' ? 0.75 : 0.6;
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
@@ -448,7 +452,7 @@ export default function Page() {
       machine === 'CONVEYOR'
         ? (['tier2', 'tier1'] as TierId[])
         : machine === 'COMPACTOR'
-          ? (['tier3', 'tier2'] as TierId[])
+          ? (['tier2'] as TierId[])
           : (['tier3'] as TierId[]);
     const tier = tierCycle[effectCycle % tierCycle.length];
     const primaryPool = PRIMARY_POOLS[tier];
