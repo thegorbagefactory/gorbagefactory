@@ -1599,7 +1599,7 @@ export default function Page() {
             <summary className="gf-faqQ">Can I remix the same NFT again?</summary>
             <div className="gf-faqA">
               <div className="gf-faqAInner">
-                We plan to cap at one remix per NFT for scarcity. If that changes, you will see it here first.
+                Yes. You can remix the same NFT again, but each tier has a limited supply, so availability depends on what is left.
               </div>
             </div>
           </details>
@@ -3708,6 +3708,9 @@ export default function Page() {
           }
         }
         @media (max-width: 720px) {
+          .gf-intro {
+            justify-items: center;
+          }
           .gf-introRight {
             width: 100%;
             justify-items: center;
@@ -3744,6 +3747,7 @@ export default function Page() {
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: 100%;
           }
           .gf-introTitle {
             font-size: 30px;
@@ -3766,6 +3770,7 @@ export default function Page() {
             margin: 0 auto;
             text-align: center;
             display: block;
+            align-self: center;
           }
           .gf-compactor {
             width: 100%;
@@ -3775,7 +3780,9 @@ export default function Page() {
           }
           .gf-compactorFrame {
             margin: 0 auto;
-            transform: scale(0.78);
+            position: relative;
+            left: 50%;
+            transform: translateX(-50%) scale(0.78);
             transform-origin: top center;
           }
           .gf-hero {
