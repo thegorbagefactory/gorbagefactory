@@ -228,7 +228,10 @@ function drawTrashyOverlays(
       picks.length = 1;
       picks[0] = 'caution_tape';
     }
-    const alpha = tier === 'tier3' ? 0.9 : tier === 'tier2' ? 0.75 : 0.6;
+    let alpha = tier === 'tier3' ? 0.9 : tier === 'tier2' ? 0.75 : 0.6;
+    if (picks.length === 1 && picks[0] === 'caution_tape') {
+      alpha = 0.55;
+    }
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = alpha;
@@ -450,7 +453,7 @@ export default function Page() {
   const effectTraits = useMemo(() => {
     const tierCycle =
       machine === 'CONVEYOR'
-        ? (['tier2', 'tier1'] as TierId[])
+        ? (['tier1'] as TierId[])
         : machine === 'COMPACTOR'
           ? (['tier2'] as TierId[])
           : (['tier3'] as TierId[]);
