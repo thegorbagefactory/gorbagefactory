@@ -3711,15 +3711,18 @@ export default function Page() {
           }
           .gf-introActions {
             flex-direction: column;
-            align-items: stretch;
+            align-items: center;
           }
           .gf-introActions .gf-btn {
             width: 100%;
+            max-width: 360px;
+            margin: 0 auto;
             text-align: center;
           }
           .gf-compactor {
             width: 100%;
             height: 240px;
+            justify-content: center;
           }
           .gf-compactorFrame {
             margin: 0 auto;
@@ -3736,8 +3739,15 @@ export default function Page() {
             font-size: 13px;
           }
           .gf-nftGrid {
-            grid-template-columns: 1fr;
-            max-height: 280px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            max-height: 240px;
+            gap: 10px;
+          }
+          .gf-nftTile {
+            padding: 8px;
+          }
+          .gf-nftName {
+            font-size: 11px;
           }
           .gf-previewFrame {
             min-height: 240px;
@@ -3804,10 +3814,12 @@ export default function Page() {
           .gf-belt {
             bottom: 12%;
             height: 60px;
+            animation-duration: 12s;
           }
           .gf-beltBack {
             bottom: 22%;
             height: 46px;
+            animation-duration: 14s;
           }
           .gf-beltTrash {
             bottom: 18%;
@@ -3848,7 +3860,10 @@ export default function Page() {
           }
           .gf-beltTrash,
           .gf-beltTrashBack {
-            display: none;
+            display: block;
+          }
+          .gf-beltTreads {
+            animation-duration: 3.2s;
           }
         }
       `}</style>
