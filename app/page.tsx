@@ -245,6 +245,22 @@ function drawTrashyOverlays(
   }
 }
 
+function getTierFilter(tier: TierId, primary: string) {
+  const p = primary.toLowerCase();
+  if (tier === 'tier3') {
+    if (p.includes('liquid metal')) return 'grayscale(0.6) contrast(1.85) brightness(1.08)';
+    if (p.includes('gamma') || p.includes('nuclear')) return 'invert(0.5) hue-rotate(170deg) saturate(2.6) contrast(1.8)';
+    if (p.includes('radiation') || p.includes('biohazard')) return 'hue-rotate(200deg) saturate(2.4) contrast(1.7) brightness(1.05)';
+    return 'invert(0.45) hue-rotate(160deg) saturate(2.4) contrast(1.75) brightness(1.08)';
+  }
+  if (tier === 'tier2') {
+    if (p.includes('toxic') || p.includes('leachate')) return 'hue-rotate(95deg) saturate(2) contrast(1.55) brightness(1.05)';
+    if (p.includes('grease') || p.includes('smog')) return 'hue-rotate(70deg) saturate(1.85) contrast(1.45)';
+    return 'hue-rotate(80deg) saturate(1.9) contrast(1.5) brightness(1.04)';
+  }
+  return 'saturate(1.25) contrast(1.12)';
+}
+
 function drawPreviewCanvas(
   canvas: HTMLCanvasElement,
   img: HTMLImageElement,
@@ -270,12 +286,7 @@ function drawPreviewCanvas(
 
   // Strong color transform by tier
   ctx.save();
-  ctx.filter =
-    tier === 'tier3'
-      ? 'invert(0.32) hue-rotate(130deg) saturate(2.1) contrast(1.55) brightness(1.06)'
-      : tier === 'tier2'
-        ? 'hue-rotate(50deg) saturate(1.55) contrast(1.3) brightness(1.02)'
-        : 'saturate(1.25) contrast(1.12)';
+  ctx.filter = getTierFilter(tier, primary);
   ctx.drawImage(img, dx, dy, dw, dh);
   ctx.restore();
 
@@ -2880,8 +2891,12 @@ export default function Page() {
           color: rgba(160, 255, 210, 0.9);
         }
         .gf-tierBadgeMythic {
-          border-color: rgba(255, 220, 120, 0.45);
-          color: rgba(255, 240, 170, 0.95);
+          color: #0b0b0b;
+          border-color: rgba(255, 255, 255, 0.35);
+          background: linear-gradient(90deg, #ff4d4d, #ffd64d, #5dff8b, #4dd2ff, #b04dff, #ff4dba);
+          background-size: 300% 100%;
+          animation: mythicGlow 5s linear infinite;
+          box-shadow: 0 0 18px rgba(120, 255, 255, 0.35);
         }
         .gf-tierSelected {
           font-size: 11px;
@@ -2953,7 +2968,8 @@ export default function Page() {
           background:
             radial-gradient(circle at 20% 20%, rgba(255, 230, 120, 0.65), transparent 50%),
             linear-gradient(140deg, rgba(18, 18, 10, 0.95), rgba(8, 10, 8, 0.9));
-          box-shadow: 0 0 18px rgba(255, 220, 120, 0.35);
+          box-shadow: 0 0 18px rgba(120, 255, 255, 0.35);
+          animation: mythicGlow 6s linear infinite;
         }
         .gf-tierInfo {
           display: grid;
@@ -3105,11 +3121,24 @@ export default function Page() {
           border-left: 4px solid rgba(120, 255, 200, 0.7);
         }
         .gf-tierHazmat {
-          border-left: 4px solid rgba(255, 220, 120, 0.9);
+          border-left: 4px solid transparent;
           background:
             linear-gradient(160deg, rgba(14, 16, 10, 0.98), rgba(6, 12, 8, 0.96)),
             radial-gradient(circle at 15% 10%, rgba(120, 255, 140, 0.18), transparent 55%),
             radial-gradient(circle at 80% 80%, rgba(255, 230, 120, 0.12), transparent 50%);
+        }
+        .gf-tierHazmat::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 4px;
+          border-radius: 4px;
+          background: linear-gradient(180deg, #ff4d4d, #ffd64d, #5dff8b, #4dd2ff, #b04dff, #ff4dba);
+          background-size: 100% 300%;
+          animation: mythicGlow 5s linear infinite;
+          box-shadow: 0 0 18px rgba(120, 255, 255, 0.35);
         }
         .gf-nftTile::after {
           content: '';
@@ -3511,6 +3540,7 @@ export default function Page() {
         .gf-effectHazmat .gf-previewGlow {
           background: radial-gradient(circle at 50% 50%, rgba(255, 220, 120, 0.6), transparent 55%);
           opacity: 0.75;
+          animation: mythicGlow 6s linear infinite;
         }
         .gf-effectHazmat .gf-previewGlitch {
           opacity: 0.35;
@@ -3553,6 +3583,11 @@ export default function Page() {
             transform: translateX(calc(100vw - 140px)) rotate(4deg);
             opacity: 0;
           }
+        }
+        @keyframes mythicGlow {
+          0% { background-position: 0% 50%; filter: hue-rotate(0deg); }
+          50% { background-position: 100% 50%; filter: hue-rotate(180deg); }
+          100% { background-position: 0% 50%; filter: hue-rotate(360deg); }
         }
         @keyframes previewPulse {
           0%,
@@ -3700,6 +3735,9 @@ export default function Page() {
           .gf-intro {
             padding: 18px;
           }
+          .gf-introLeft {
+            text-align: center;
+          }
           .gf-introTitle {
             font-size: 30px;
           }
@@ -3712,6 +3750,7 @@ export default function Page() {
           .gf-introActions {
             flex-direction: column;
             align-items: center;
+            width: 100%;
           }
           .gf-introActions .gf-btn {
             width: 100%;
@@ -3723,6 +3762,7 @@ export default function Page() {
             width: 100%;
             height: 240px;
             justify-content: center;
+            margin: 0 auto;
           }
           .gf-compactorFrame {
             margin: 0 auto;
@@ -3764,6 +3804,16 @@ export default function Page() {
           }
           .gf-tierSectionCompact .gf-tierPreview {
             height: 84px;
+          }
+          .gf-tierTop {
+            justify-content: center;
+            gap: 8px;
+          }
+          .gf-tierCompare {
+            justify-content: center;
+          }
+          .gf-compareArrow {
+            display: none;
           }
           .gf-tierFooter {
             grid-template-columns: 1fr;
