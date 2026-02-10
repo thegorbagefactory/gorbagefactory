@@ -496,6 +496,9 @@ export default function Page() {
     if (!selectedImage) return;
     if (imgUrlRef.current === selectedImage && imgRef.current) return;
     imgUrlRef.current = selectedImage;
+    if (status.toLowerCase().includes('select an nft')) {
+      setStatus('');
+    }
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -866,7 +869,11 @@ export default function Page() {
         setNfts(filtered);
         writeCachedNfts(owner, filtered);
         if (!selected && filtered[0]) setSelected(filtered[0]);
-        setStatus(`Select an NFT to remix. (${filtered.length} found)`);
+        if (filtered[0]) {
+          setStatus('');
+        } else {
+          setStatus(`Select an NFT to remix. (${filtered.length} found)`);
+        }
         return;
       }
 
@@ -886,7 +893,11 @@ export default function Page() {
         setNfts(filtered);
         writeCachedNfts(owner, filtered);
         if (!selected && filtered[0]) setSelected(filtered[0]);
-        setStatus(`Select an NFT to remix. (${filtered.length} found)`);
+        if (filtered[0]) {
+          setStatus('');
+        } else {
+          setStatus(`Select an NFT to remix. (${filtered.length} found)`);
+        }
         return;
       }
 
