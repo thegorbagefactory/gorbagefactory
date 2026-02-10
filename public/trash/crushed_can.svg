@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <defs>
+    <linearGradient id="canBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9e0e6"/>
+      <stop offset="1" stop-color="#7b8691"/>
+    </linearGradient>
+    <linearGradient id="canShadow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9aa3ac"/>
+      <stop offset="1" stop-color="#5c6670"/>
+    </linearGradient>
+  </defs>
+  <path d="M86 86h148l-12 102c-3 24-24 42-48 42h-28c-24 0-45-18-48-42L86 86z" fill="url(#canBody)"/>
+  <path d="M100 106c30 16 90 16 120 0" stroke="#a8b1b9" stroke-width="10" stroke-linecap="round"/>
+  <path d="M96 146c34 16 96 16 128 0" stroke="#9aa3ac" stroke-width="10" stroke-linecap="round"/>
+  <path d="M108 186c28 10 76 10 104 0" stroke="#8a949d" stroke-width="10" stroke-linecap="round"/>
+  <rect x="92" y="64" width="136" height="24" rx="12" fill="url(#canShadow)"/>
+  <path d="M124 76h72" stroke="#c7ced4" stroke-width="6" stroke-linecap="round"/>
+</svg>

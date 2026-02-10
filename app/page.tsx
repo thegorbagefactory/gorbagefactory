@@ -10,7 +10,7 @@ type TierId = 'tier1' | 'tier2' | 'tier3';
 type DasAsset = {
   id: string;
   content?: {
-    metadata?: { name?: string; image?: string };
+    metadata?: { name?: string; image?: string; symbol?: string };
     links?: { image?: string };
     files?: Array<{ uri?: string; mime?: string }>;
   };
@@ -154,6 +154,7 @@ function drawTrashyOverlays(
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
   const strength = tier === 'tier3' ? 1 : tier === 'tier2' ? 0.7 : 0.45;
+  const pool = TRASH_ITEM_POOLS[tier] || [];
 
   // Burned edges
   ctx.save();
@@ -220,6 +221,28 @@ function drawTrashyOverlays(
     drawGraffiti(ctx, rng, w, h);
   }
   ctx.restore();
+
+  // Physical trash overlays (premapped PNGs, edge-safe)
+  if (pool.length) {
+    const pickCount = tier === 'tier3' ? 2 : 1;
+    const picks: string[] = [];
+    const poolCopy = [...pool];
+    for (let i = 0; i < pickCount && poolCopy.length; i++) {
+      const idx = Math.floor(rng() * poolCopy.length);
+      picks.push(poolCopy.splice(idx, 1)[0]);
+    }
+    const alpha = tier === 'tier3' ? 0.9 : tier === 'tier2' ? 0.75 : 0.6;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+    for (const name of picks) {
+      const img = getTrashImage(name);
+      if (img.complete) {
+        ctx.drawImage(img, 0, 0, w, h);
+      }
+    }
+    ctx.restore();
+  }
 }
 
 function drawPreviewCanvas(
@@ -293,6 +316,33 @@ const TEXTURE_POOLS = ['Grime Film', 'Oil Vignette', 'Smog Haze', 'Mold Bloom', 
 const GLOW_POOLS = ['Toxic Teal', 'Amber Rust', 'Magenta Spill', 'Lime Halo', 'Cold Cyan'];
 const EDGE_POOLS = ['Clean Edge', 'Pitted Edge', 'Burnt Edge', 'Stickered Edge'];
 
+const TRASH_ITEM_SOURCES: Record<string, string> = {
+  trash_bag: '/trash/trash_bag.png',
+  fishbone: '/trash/fishbone.png',
+  tire: '/trash/tire.png',
+  crushed_can: '/trash/crushed_can.png',
+  pizza_box: '/trash/pizza_box.png',
+  banana: '/trash/banana.png',
+  caution_tape: '/trash/caution_tape.png',
+};
+
+const TRASH_ITEM_POOLS: Record<TierId, string[]> = {
+  tier1: ['trash_bag', 'fishbone'],
+  tier2: ['tire', 'crushed_can', 'pizza_box'],
+  tier3: ['banana', 'caution_tape'],
+};
+
+const trashImageCache: Record<string, HTMLImageElement> = {};
+
+function getTrashImage(name: string) {
+  if (!trashImageCache[name]) {
+    const img = new Image();
+    img.src = TRASH_ITEM_SOURCES[name];
+    trashImageCache[name] = img;
+  }
+  return trashImageCache[name];
+}
+
 function getBackpackProvider() {
   const w = window as any;
   if (w?.backpack?.solana) return w.backpack.solana;
@@ -364,6 +414,9 @@ function isCollectionAsset(asset: DasAsset): boolean {
   if (COLLECTION_MINT && asset?.id === COLLECTION_MINT) return true;
   const name = asset?.content?.metadata?.name || '';
   if (name.trim().toLowerCase() === 'trashtech') return true;
+  if (name.trim().toLowerCase().startsWith('trashtech')) return true;
+  const symbol = asset?.content?.metadata?.symbol || '';
+  if (symbol.trim().toLowerCase() === 'trash') return true;
   return false;
 }
 
@@ -458,6 +511,12 @@ export default function Page() {
     if (!selectedImage || !imgRef.current || !previewCanvasRef.current) return;
     drawPreviewCanvas(previewCanvasRef.current, imgRef.current, effectTraits.tier, effectTraits.primary, previewSeed);
   }, [selectedImage, effectTraits.tier, effectTraits.primary, previewSeed]);
+
+  useEffect(() => {
+    Object.keys(TRASH_ITEM_SOURCES).forEach((key) => {
+      getTrashImage(key);
+    });
+  }, []);
   const tierClass = useMemo(() => `gf-tier-${effectTraits.tier}`, [effectTraits.tier]);
   useEffect(() => {
     if (!selected) return;
