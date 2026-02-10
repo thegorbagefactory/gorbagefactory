@@ -3714,6 +3714,9 @@ export default function Page() {
           .gf-introRight {
             width: 100%;
             justify-items: center;
+            justify-self: center;
+            align-self: center;
+            margin-inline: auto;
           }
           .gf-header {
             position: static;
@@ -3748,6 +3751,9 @@ export default function Page() {
             flex-direction: column;
             align-items: center;
             width: 100%;
+            justify-self: center;
+            align-self: center;
+            margin-inline: auto;
           }
           .gf-introTitle {
             font-size: 30px;
@@ -3763,9 +3769,10 @@ export default function Page() {
             align-items: center;
             width: 100%;
             justify-content: center;
+            display: flex;
           }
           .gf-introActions .gf-btn {
-            width: 100%;
+            width: calc(100% - 16px);
             max-width: 360px;
             margin: 0 auto;
             text-align: center;
@@ -3777,6 +3784,8 @@ export default function Page() {
             height: 240px;
             justify-content: center;
             margin: 0 auto;
+            left: 50%;
+            transform: translateX(-50%);
           }
           .gf-compactorFrame {
             margin: 0 auto;
