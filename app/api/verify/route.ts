@@ -587,6 +587,33 @@ async function mintStandardNft(params: {
   return nft.address.toBase58();
 }
 
+function isRetryableChainError(err: any) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    msg.includes("block height exceeded") ||
+    msg.includes("blockhash not found") ||
+    msg.includes("transactionexpiredblockheightexceedederror") ||
+    msg.includes("has expired") ||
+    msg.includes("could not be confirmed")
+  );
+}
+
+async function withChainRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+  let lastErr: any = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      if (!isRetryableChainError(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 900 * attempt));
+    }
+  }
+  throw lastErr || new Error("Chain operation failed");
+}
+
 function getFeePayer(tx: any) {
   const keys = tx?.transaction?.message?.accountKeys;
   if (!Array.isArray(keys) || keys.length === 0) return null;
@@ -783,14 +810,18 @@ export async function POST(req: Request) {
         saveLedger(ledger);
       }
       const collectionMint = await ensureCollection({ connection, payer: payerKeypair, ledger });
-      const minted = await mintStandardNft({
-        connection,
-        payer: payerKeypair,
-        owner: payer,
-        name: remixName,
-        metadataUrl,
-        collectionMint,
-      });
+      const minted = await withChainRetry(
+        () =>
+          mintStandardNft({
+            connection,
+            payer: payerKeypair,
+            owner: payer,
+            name: remixName,
+            metadataUrl,
+            collectionMint,
+          }),
+        4
+      );
       const treasuryBalanceAfter = await connection.getBalance(treasury, "confirmed");
       const mintCostLamports = Math.max(0, treasuryBalanceBefore - treasuryBalanceAfter);
 
