@@ -525,20 +525,12 @@ export default function Page() {
   const statusInfo = useMemo(() => {
     const raw = status || '';
     const lower = raw.toLowerCase();
+
+    // Production-facing status surface (intentionally minimal)
     if (raw.startsWith('Minted:')) return { type: 'success' as const, label: 'Trash Successfully Minted.' };
     if (lower.includes('insufficient')) return { type: 'error' as const, label: raw };
     if (lower.includes('select an nft') || lower.includes('no trash selected')) {
       return { type: 'error' as const, label: 'Select an NFT first.' };
-    }
-    if (
-      lower.includes('failed') ||
-      lower.includes('error') ||
-      lower.includes('transaction') ||
-      lower.includes('wallet') ||
-      lower.includes('connect') ||
-      lower.includes('verification')
-    ) {
-      return { type: 'error' as const, label: raw };
     }
     if (isMinting) return { type: 'progress' as const, label: 'Compacting your trash…' };
     return null;
