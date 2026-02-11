@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ComputeBudgetProgram, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -573,7 +573,7 @@ async function ensureCollection(params: { connection: Connection; payer: Keypair
       signers: [],
     }
   );
-  const out: any = await builder.sendAndConfirm(metaplex, MINT_CONFIRM_OPTIONS);
+  const out: any = await sendBuilderWithPolling(builder, params.connection, 6);
   const collectionAddress = out?.mintAddress;
   if (!collectionAddress) throw new Error("Collection mint address missing");
 
@@ -609,10 +609,95 @@ async function mintStandardNft(params: {
       signers: [],
     }
   );
-  const out: any = await builder.sendAndConfirm(metaplex, MINT_CONFIRM_OPTIONS);
+  const out: any = await sendBuilderWithPolling(builder, params.connection, 8);
   const mintAddress = out?.mintAddress;
   if (!mintAddress) throw new Error("Mint address missing");
   return mintAddress.toBase58();
+}
+
+async function sendBuilderWithPolling(builder: any, connection: Connection, maxAttempts = 6) {
+  const instructions = builder.getInstructions();
+  const signerInputs: any[] = builder.getSigners?.() || [];
+  const context = builder.getContext?.() || {};
+
+  const unique = new Map<string, any>();
+  for (const signer of signerInputs) {
+    const key = signer?.publicKey?.toBase58?.();
+    if (!key) continue;
+    unique.set(key, signer);
+  }
+  const signers = Array.from(unique.values());
+  const keypairSigners = signers
+    .filter((s) => s?.secretKey)
+    .map((s) => Keypair.fromSecretKey(Uint8Array.from(s.secretKey)));
+  const identitySigners = signers.filter((s) => !s?.secretKey && typeof s?.signTransaction === "function");
+
+  if (!keypairSigners.length && !identitySigners.length) {
+    throw new Error("No signers available for mint transaction");
+  }
+
+  let lastErr: any = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const latest = await connection.getLatestBlockhash("processed");
+      const feePayer = keypairSigners[0]?.publicKey || identitySigners[0]?.publicKey;
+      if (!feePayer) throw new Error("Missing fee payer for mint transaction");
+
+      let tx = new Transaction({
+        feePayer,
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      });
+      tx.add(...instructions);
+
+      if (keypairSigners.length) tx.partialSign(...keypairSigners);
+      for (const signer of identitySigners) {
+        tx = await signer.signTransaction(tx);
+      }
+
+      const raw = tx.serialize();
+      const signature = await connection.sendRawTransaction(raw, MINT_CONFIRM_OPTIONS);
+      const started = Date.now();
+      let loops = 0;
+
+      while (Date.now() - started < 60_000) {
+        loops += 1;
+        const statusResp = await connection.getSignatureStatuses([signature], {
+          searchTransactionHistory: false,
+        });
+        const status = statusResp?.value?.[0];
+        if (status?.err) {
+          throw new Error(`Mint transaction failed: ${JSON.stringify(status.err)}`);
+        }
+        if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+          return { ...context, signature };
+        }
+
+        if (loops % 3 === 0) {
+          // Re-broadcast same signed tx while waiting; helps when RPC propagation is delayed.
+          try {
+            await connection.sendRawTransaction(raw, MINT_CONFIRM_OPTIONS);
+          } catch {
+            // ignore rebroadcast errors
+          }
+        }
+
+        const height = await connection.getBlockHeight("processed");
+        if (height > latest.lastValidBlockHeight) {
+          throw new Error(`TransactionExpiredBlockheightExceededError: Signature ${signature} has expired: block height exceeded.`);
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+
+      throw new Error(`Transaction timeout waiting confirmation: ${signature}`);
+    } catch (err: any) {
+      lastErr = err;
+      if (!isRetryableChainError(err) || attempt === maxAttempts) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+
+  throw lastErr || new Error("Mint send failed");
 }
 
 function isRetryableChainError(err: any) {
