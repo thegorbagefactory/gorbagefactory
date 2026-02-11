@@ -869,15 +869,10 @@ export default function Page() {
         });
 
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
+        // Token-account fallback should never override metadata-backed assets.
+        // Keep this path empty for UI rendering to avoid placeholder names/images.
         if (!mints.length) return [] as DasAsset[];
-        return normalizeAssets(
-          mints.slice(0, 40).map((mint, idx) => ({
-            id: mint,
-            content: {
-              metadata: { name: `NFT ${idx + 1}` },
-            },
-          }))
-        );
+        return [] as DasAsset[];
       });
 
       const nonEmpty = (p: Promise<DasAsset[]>) =>
@@ -888,7 +883,7 @@ export default function Page() {
 
       let first: DasAsset[] | null = null;
       try {
-        first = await Promise.any([nonEmpty(dasPromise), nonEmpty(tokenPromise)]);
+        first = await Promise.any([nonEmpty(dasPromise)]);
       } catch {
         first = null;
       }
