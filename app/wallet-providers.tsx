@@ -139,7 +139,7 @@ class BackpackAdapter extends BaseMessageSignerWalletAdapter {
 }
 
 export default function WalletProviders({ children }: { children: React.ReactNode }) {
-  const rpc = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || "https://rpc.trashscan.io";
+  const rpc = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || "https://rpc.gorbagana.wtf/";
 
   const wallets = useMemo(() => [new BackpackAdapter()], []);
 

@@ -16,7 +16,6 @@ type DasAsset = {
   };
 };
 
-type DasResponse<T> = { result?: T; error?: { message?: string } };
 type SupplyState = {
   tier1: { cap: number; minted: number; remaining: number };
   tier2: { cap: number; minted: number; remaining: number };
@@ -26,9 +25,6 @@ type SupplyState = {
 };
 
 const RPC = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.gorbagana.wtf/';
-
-// Trashscan DAS-style endpoint (GOR)
-const DAS = 'https://gorapi.trashscan.io/';
 
 // Prices shown in UI (optional)
 const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || '1';
@@ -386,29 +382,6 @@ async function connectBackpack(): Promise<string> {
   const pk = res?.publicKey ?? p.publicKey;
   if (!pk) throw new Error('Backpack connected but no publicKey returned.');
   return pk.toString();
-}
-
-async function fetchDas<T>(method: string, params: any, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(DAS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: '1', method, params }),
-    signal,
-  });
-  const data = (await res.json()) as DasResponse<T>;
-  if (data?.error?.message) throw new Error(data.error.message);
-  if (!data?.result) throw new Error('No result from DAS');
-  return data.result;
-}
-
-async function fetchDasWithTimeout<T>(method: string, params: any, timeoutMs: number): Promise<T> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchDas<T>(method, params, controller.signal);
-  } finally {
-    window.clearTimeout(timer);
-  }
 }
 
 function pickImage(asset: DasAsset): string | '' {
@@ -823,26 +796,6 @@ export default function Page() {
     }
   }
 
-  async function fetchAssetsByMintIds(mints: string[], limit = 40) {
-    const slice = mints.slice(0, limit);
-    const out: DasAsset[] = [];
-    const concurrency = 6;
-    let idx = 0;
-    const workers = Array.from({ length: concurrency }, async () => {
-      while (idx < slice.length) {
-        const mint = slice[idx++];
-        try {
-          const asset = (await fetchDasWithTimeout('getAsset', { id: mint }, 4500)) as DasAsset;
-          if (asset) out.push(asset);
-        } catch {
-          // ignore
-        }
-      }
-    });
-    await Promise.all(workers);
-    return out;
-  }
-
   const lastLoadRef = useRef(0);
 
   async function loadNfts(owner: string, opts?: { force?: boolean }) {
@@ -875,18 +828,16 @@ export default function Page() {
           return normalizeAssets(items);
         });
 
-      const directDasPromise = fetchDasWithTimeout<any>(
-        'getAssetsByOwner',
-        { ownerAddress: owner, page: 1, limit: 50 },
-        6000
-      ).then((result) => {
-        const items: DasAsset[] = result?.items || result?.assets || [];
-        return normalizeAssets(items);
-      });
-
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
         if (!mints.length) return [] as DasAsset[];
-        return normalizeAssets(await fetchAssetsByMintIds(mints, 40));
+        return normalizeAssets(
+          mints.slice(0, 40).map((mint, idx) => ({
+            id: mint,
+            content: {
+              metadata: { name: `NFT ${idx + 1}` },
+            },
+          }))
+        );
       });
 
       const nonEmpty = (p: Promise<DasAsset[]>) =>
@@ -897,7 +848,7 @@ export default function Page() {
 
       let first: DasAsset[] | null = null;
       try {
-        first = await Promise.any([nonEmpty(dasPromise), nonEmpty(directDasPromise), nonEmpty(tokenPromise)]);
+        first = await Promise.any([nonEmpty(dasPromise), nonEmpty(tokenPromise)]);
       } catch {
         first = null;
       }
@@ -916,14 +867,9 @@ export default function Page() {
         return;
       }
 
-      const [dasAssets, directAssets, tokenAssets] = await Promise.allSettled([
-        dasPromise,
-        directDasPromise,
-        tokenPromise,
-      ]);
+      const [dasAssets, tokenAssets] = await Promise.allSettled([dasPromise, tokenPromise]);
       const merged = normalizeAssets([
         ...(dasAssets.status === 'fulfilled' ? dasAssets.value : []),
-        ...(directAssets.status === 'fulfilled' ? directAssets.value : []),
         ...(tokenAssets.status === 'fulfilled' ? tokenAssets.value : []),
       ]);
       const unique = merged.filter((asset, idx, arr) => arr.findIndex((a) => a.id === asset.id) === idx);
