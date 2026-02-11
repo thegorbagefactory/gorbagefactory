@@ -530,6 +530,16 @@ export default function Page() {
     if (lower.includes('select an nft') || lower.includes('no trash selected')) {
       return { type: 'error' as const, label: 'Select an NFT first.' };
     }
+    if (
+      lower.includes('failed') ||
+      lower.includes('error') ||
+      lower.includes('transaction') ||
+      lower.includes('wallet') ||
+      lower.includes('connect') ||
+      lower.includes('verification')
+    ) {
+      return { type: 'error' as const, label: raw };
+    }
     if (isMinting) return { type: 'progress' as const, label: 'Compacting your trash…' };
     return null;
   }, [status, isMinting]);
@@ -1065,7 +1075,14 @@ export default function Page() {
             };
 
             setStatus(`Approve payment in Backpack now… (${attempt}/${maxAttempts})`);
-            if (supportsSign) {
+            if (supportsSignAndSend) {
+              const res = await withTimeout(
+                provider.signAndSendTransaction(tx),
+                15000,
+                'Wallet did not respond. Please approve again.'
+              );
+              sig = (res as any)?.signature || (res as any);
+            } else if (supportsSign) {
               try {
                 const signed = await withTimeout(
                   provider.signTransaction(tx),
@@ -1079,7 +1096,7 @@ export default function Page() {
                 });
               } catch (err: any) {
                 const msg = String(err?.message || err || '').toLowerCase();
-                if (!supportsSignAndSend || msg.includes('rejected') || msg.includes('closed')) throw err;
+                if (!supportsSignAndSend || msg.includes('rejected')) throw err;
                 const res = await withTimeout(
                   provider.signAndSendTransaction(tx),
                   15000,
@@ -1087,13 +1104,6 @@ export default function Page() {
                 );
                 sig = (res as any)?.signature || (res as any);
               }
-            } else if (supportsSignAndSend) {
-              const res = await withTimeout(
-                provider.signAndSendTransaction(tx),
-                15000,
-                'Wallet did not respond. Please approve again.'
-              );
-              sig = (res as any)?.signature || (res as any);
             }
 
             setStatus('Payment sent. Verifying on-chain...');
