@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -86,6 +86,8 @@ const TIER3_CAP = Number(process.env.TIER3_CAP ?? "444");
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES ?? 8 * 1024 * 1024);
 const MAX_IMAGE_BYTES = Number(process.env.MAX_IMAGE_BYTES ?? 5 * 1024 * 1024);
 const MAX_TX_SLOT_AGE = Number(process.env.MAX_TX_SLOT_AGE ?? 300);
+const PRIORITY_FEE_MICROLAMPORTS = Number(process.env.PRIORITY_FEE_MICROLAMPORTS ?? 100000);
+const COMPUTE_UNITS = Number(process.env.MINT_COMPUTE_UNITS ?? 400000);
 
 if (!Number.isFinite(MAX_BODY_BYTES) || MAX_BODY_BYTES <= 0) {
   throw new Error("Invalid MAX_BODY_BYTES configuration");
@@ -95,6 +97,12 @@ if (!Number.isFinite(MAX_IMAGE_BYTES) || MAX_IMAGE_BYTES <= 0) {
 }
 if (!Number.isFinite(MAX_TX_SLOT_AGE) || MAX_TX_SLOT_AGE <= 0) {
   throw new Error("Invalid MAX_TX_SLOT_AGE configuration");
+}
+if (!Number.isFinite(PRIORITY_FEE_MICROLAMPORTS) || PRIORITY_FEE_MICROLAMPORTS <= 0) {
+  throw new Error("Invalid PRIORITY_FEE_MICROLAMPORTS configuration");
+}
+if (!Number.isFinite(COMPUTE_UNITS) || COMPUTE_UNITS <= 0) {
+  throw new Error("Invalid MINT_COMPUTE_UNITS configuration");
 }
 
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
@@ -549,25 +557,29 @@ async function ensureCollection(params: { connection: Connection; payer: Keypair
   });
 
   const metaplex = Metaplex.make(params.connection).use(keypairIdentity(params.payer));
-  const { nft } = await metaplex.nfts().create(
+  const builder = await metaplex.nfts().builders().create({
+    uri: metadataUrl,
+    name: "TrashTech",
+    symbol: "TRASH",
+    sellerFeeBasisPoints: 0,
+    tokenOwner: params.payer.publicKey,
+    isMutable: true,
+    isCollection: true,
+  });
+  builder.prepend(
+    { instruction: ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }), signers: [] },
     {
-      uri: metadataUrl,
-      name: "TrashTech",
-      symbol: "TRASH",
-      sellerFeeBasisPoints: 0,
-      tokenOwner: params.payer.publicKey,
-      isMutable: true,
-      isCollection: true,
-    },
-    {
-      commitment: "processed",
-      confirmOptions: MINT_CONFIRM_OPTIONS,
+      instruction: ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_MICROLAMPORTS }),
+      signers: [],
     }
   );
+  const out: any = await builder.sendAndConfirm(metaplex, MINT_CONFIRM_OPTIONS);
+  const collectionAddress = out?.mintAddress;
+  if (!collectionAddress) throw new Error("Collection mint address missing");
 
-  params.ledger.collectionMint = nft.address.toBase58();
+  params.ledger.collectionMint = collectionAddress.toBase58();
   saveLedger(params.ledger);
-  return nft.address;
+  return collectionAddress;
 }
 
 async function mintStandardNft(params: {
@@ -579,24 +591,28 @@ async function mintStandardNft(params: {
   collectionMint?: PublicKey;
 }) {
   const metaplex = Metaplex.make(params.connection).use(keypairIdentity(params.payer));
-  const { nft } = await metaplex.nfts().create(
+  const builder = await metaplex.nfts().builders().create({
+    uri: params.metadataUrl,
+    name: params.name,
+    symbol: "TRASH",
+    sellerFeeBasisPoints: 0,
+    tokenOwner: params.owner,
+    isMutable: true,
+    collection: params.collectionMint ?? null,
+    collectionAuthority: params.collectionMint ? params.payer : null,
+    collectionIsSized: params.collectionMint ? true : undefined,
+  });
+  builder.prepend(
+    { instruction: ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }), signers: [] },
     {
-      uri: params.metadataUrl,
-      name: params.name,
-      symbol: "TRASH",
-      sellerFeeBasisPoints: 0,
-      tokenOwner: params.owner,
-      isMutable: true,
-      collection: params.collectionMint ?? null,
-      collectionAuthority: params.collectionMint ? params.payer : null,
-      collectionIsSized: params.collectionMint ? true : undefined,
-    },
-    {
-      commitment: "processed",
-      confirmOptions: MINT_CONFIRM_OPTIONS,
+      instruction: ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_MICROLAMPORTS }),
+      signers: [],
     }
   );
-  return nft.address.toBase58();
+  const out: any = await builder.sendAndConfirm(metaplex, MINT_CONFIRM_OPTIONS);
+  const mintAddress = out?.mintAddress;
+  if (!mintAddress) throw new Error("Mint address missing");
+  return mintAddress.toBase58();
 }
 
 function isRetryableChainError(err: any) {
