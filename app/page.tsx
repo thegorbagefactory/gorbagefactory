@@ -1129,7 +1129,7 @@ export default function Page() {
 
       setStatus('Minting your remix...');
       const verifyWithRetry = async () => {
-        const maxVerify = 12;
+        const maxVerify = 24;
         for (let attempt = 1; attempt <= maxVerify; attempt++) {
           const verifyRes = await fetch('/api/verify', {
             method: 'POST',
@@ -1147,8 +1147,9 @@ export default function Page() {
           const verify = await verifyRes.json();
           if (verifyRes.ok && verify?.ok) return verify;
           const errorText = String(verify?.error || 'Mint failed.');
-          const detailText = verify?.detail ? ` (${verify.detail})` : '';
-          const errMsg = errorText.toLowerCase();
+          const detailRaw = String(verify?.detail || '');
+          const detailText = detailRaw ? ` (${detailRaw})` : '';
+          const errMsg = `${errorText} ${detailRaw}`.toLowerCase();
           if (
             verifyRes.status === 404 ||
             errMsg.includes('not found') ||
@@ -1156,7 +1157,7 @@ export default function Page() {
             errMsg.includes('expired')
           ) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
-            await new Promise((r) => setTimeout(r, 3000));
+            await new Promise((r) => setTimeout(r, 2500));
             continue;
           }
           throw new Error(`${errorText}${detailText}`);
