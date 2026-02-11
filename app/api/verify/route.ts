@@ -549,15 +549,21 @@ async function ensureCollection(params: { connection: Connection; payer: Keypair
   });
 
   const metaplex = Metaplex.make(params.connection).use(keypairIdentity(params.payer));
-  const { nft } = await metaplex.nfts().create({
-    uri: metadataUrl,
-    name: "TrashTech",
-    symbol: "TRASH",
-    sellerFeeBasisPoints: 0,
-    tokenOwner: params.payer.publicKey,
-    isMutable: true,
-    isCollection: true,
-  });
+  const { nft } = await metaplex.nfts().create(
+    {
+      uri: metadataUrl,
+      name: "TrashTech",
+      symbol: "TRASH",
+      sellerFeeBasisPoints: 0,
+      tokenOwner: params.payer.publicKey,
+      isMutable: true,
+      isCollection: true,
+    },
+    {
+      commitment: "processed",
+      confirmOptions: MINT_CONFIRM_OPTIONS,
+    }
+  );
 
   params.ledger.collectionMint = nft.address.toBase58();
   saveLedger(params.ledger);
@@ -573,17 +579,23 @@ async function mintStandardNft(params: {
   collectionMint?: PublicKey;
 }) {
   const metaplex = Metaplex.make(params.connection).use(keypairIdentity(params.payer));
-  const { nft } = await metaplex.nfts().create({
-    uri: params.metadataUrl,
-    name: params.name,
-    symbol: "TRASH",
-    sellerFeeBasisPoints: 0,
-    tokenOwner: params.owner,
-    isMutable: true,
-    collection: params.collectionMint ?? null,
-    collectionAuthority: params.collectionMint ? params.payer : null,
-    collectionIsSized: params.collectionMint ? true : undefined,
-  });
+  const { nft } = await metaplex.nfts().create(
+    {
+      uri: params.metadataUrl,
+      name: params.name,
+      symbol: "TRASH",
+      sellerFeeBasisPoints: 0,
+      tokenOwner: params.owner,
+      isMutable: true,
+      collection: params.collectionMint ?? null,
+      collectionAuthority: params.collectionMint ? params.payer : null,
+      collectionIsSized: params.collectionMint ? true : undefined,
+    },
+    {
+      commitment: "processed",
+      confirmOptions: MINT_CONFIRM_OPTIONS,
+    }
+  );
   return nft.address.toBase58();
 }
 
@@ -598,7 +610,7 @@ function isRetryableChainError(err: any) {
   );
 }
 
-async function withChainRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+async function withChainRetry<T>(fn: () => Promise<T>, maxAttempts = 6): Promise<T> {
   let lastErr: any = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -608,7 +620,7 @@ async function withChainRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise
       if (!isRetryableChainError(err) || attempt === maxAttempts) {
         throw err;
       }
-      await new Promise((r) => setTimeout(r, 900 * attempt));
+      await new Promise((r) => setTimeout(r, 1200 * attempt));
     }
   }
   throw lastErr || new Error("Chain operation failed");
@@ -638,6 +650,12 @@ function verifyPaymentInstruction(tx: any, payer: PublicKey, treasury: PublicKey
 }
 
 const DEBUG_VERIFY = (process.env.DEBUG_VERIFY || "").toLowerCase() === "true";
+const MINT_CONFIRM_OPTIONS = {
+  commitment: "processed" as const,
+  preflightCommitment: "processed" as const,
+  skipPreflight: true,
+  maxRetries: 30,
+};
 
 export async function POST(req: Request) {
   if (!rateLimit(req, "verify", 10, 60_000)) return rateLimitResponse();
@@ -809,7 +827,10 @@ export async function POST(req: Request) {
         ledger.collectionMint = persistent.collectionMint;
         saveLedger(ledger);
       }
-      const collectionMint = await ensureCollection({ connection, payer: payerKeypair, ledger });
+      const collectionMint = await withChainRetry(
+        () => ensureCollection({ connection, payer: payerKeypair, ledger }),
+        4
+      );
       const minted = await withChainRetry(
         () =>
           mintStandardNft({
@@ -820,7 +841,7 @@ export async function POST(req: Request) {
             metadataUrl,
             collectionMint,
           }),
-        4
+        6
       );
       const treasuryBalanceAfter = await connection.getBalance(treasury, "confirmed");
       const mintCostLamports = Math.max(0, treasuryBalanceBefore - treasuryBalanceAfter);
@@ -868,6 +889,12 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("[/api/verify] error", e);
+    if (isRetryableChainError(e)) {
+      return NextResponse.json(
+        { error: "Chain confirmation delayed. Keep waiting.", detail: String(e?.message || e || "Unknown error") },
+        { status: 503 }
+      );
+    }
     if (DEBUG_VERIFY) {
       return NextResponse.json(
         { error: "Verification failed", detail: String(e?.message || e || "Unknown error") },

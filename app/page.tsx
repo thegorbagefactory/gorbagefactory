@@ -1129,7 +1129,7 @@ export default function Page() {
 
       setStatus('Minting your remix...');
       const verifyWithRetry = async () => {
-        const maxVerify = 24;
+        const maxVerify = 36;
         for (let attempt = 1; attempt <= maxVerify; attempt++) {
           const verifyRes = await fetch('/api/verify', {
             method: 'POST',
@@ -1152,12 +1152,14 @@ export default function Page() {
           const errMsg = `${errorText} ${detailRaw}`.toLowerCase();
           if (
             verifyRes.status === 404 ||
+            verifyRes.status === 503 ||
             errMsg.includes('not found') ||
+            errMsg.includes('chain confirmation delayed') ||
             errMsg.includes('block height exceeded') ||
             errMsg.includes('expired')
           ) {
             setStatus(`Finalizing payment... (${attempt}/${maxVerify})`);
-            await new Promise((r) => setTimeout(r, 2500));
+            await new Promise((r) => setTimeout(r, 2000));
             continue;
           }
           throw new Error(`${errorText}${detailText}`);
