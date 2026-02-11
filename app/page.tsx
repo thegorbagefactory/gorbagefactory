@@ -431,6 +431,34 @@ function isCollectionAsset(asset: DasAsset): boolean {
   return false;
 }
 
+function normalizeAssets(assets: DasAsset[]): DasAsset[] {
+  const out: DasAsset[] = [];
+  for (let i = 0; i < assets.length; i++) {
+    const a = assets[i] as any;
+    const fallbackId =
+      (typeof a?.id === 'string' && a.id) ||
+      (typeof a?.mint === 'string' && a.mint) ||
+      (typeof a?.address === 'string' && a.address) ||
+      `${a?.content?.metadata?.name || 'asset'}-${i}`;
+    const name =
+      (typeof a?.content?.metadata?.name === 'string' && a.content.metadata.name) ||
+      (typeof a?.name === 'string' && a.name) ||
+      fallbackId.slice(0, 8);
+    out.push({
+      ...a,
+      id: fallbackId,
+      content: {
+        ...a?.content,
+        metadata: {
+          ...a?.content?.metadata,
+          name,
+        },
+      },
+    });
+  }
+  return out;
+}
+
 export default function Page() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -781,7 +809,7 @@ export default function Page() {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed as DasAsset[];
+      return normalizeAssets(parsed as DasAsset[]);
     } catch {
       return [];
     }
@@ -789,7 +817,7 @@ export default function Page() {
 
   function writeCachedNfts(owner: string, assets: DasAsset[]) {
     try {
-      localStorage.setItem(cacheKey(owner), JSON.stringify(assets.slice(0, 50)));
+      localStorage.setItem(cacheKey(owner), JSON.stringify(normalizeAssets(assets).slice(0, 50)));
     } catch {
       // ignore
     }
@@ -844,7 +872,7 @@ export default function Page() {
         })
         .then((data) => {
           const items: DasAsset[] = data?.items || [];
-          return items;
+          return normalizeAssets(items);
         });
 
       const directDasPromise = fetchDasWithTimeout<any>(
@@ -853,12 +881,12 @@ export default function Page() {
         6000
       ).then((result) => {
         const items: DasAsset[] = result?.items || result?.assets || [];
-        return items;
+        return normalizeAssets(items);
       });
 
       const tokenPromise = fetchMintsFromOwner(owner).then(async (mints) => {
         if (!mints.length) return [] as DasAsset[];
-        return await fetchAssetsByMintIds(mints, 40);
+        return normalizeAssets(await fetchAssetsByMintIds(mints, 40));
       });
 
       const nonEmpty = (p: Promise<DasAsset[]>) =>
@@ -893,11 +921,11 @@ export default function Page() {
         directDasPromise,
         tokenPromise,
       ]);
-      const merged = [
+      const merged = normalizeAssets([
         ...(dasAssets.status === 'fulfilled' ? dasAssets.value : []),
         ...(directAssets.status === 'fulfilled' ? directAssets.value : []),
         ...(tokenAssets.status === 'fulfilled' ? tokenAssets.value : []),
-      ];
+      ]);
       const unique = merged.filter((asset, idx, arr) => arr.findIndex((a) => a.id === asset.id) === idx);
       const filtered = unique.filter((a) => !isCollectionAsset(a));
       if (filtered.length) {
