@@ -24,7 +24,20 @@ type SupplyState = {
   totalMinted: number;
 };
 
-const RPC = process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.gorbagana.wtf/';
+function pickRpcUrl(...candidates: Array<string | undefined>) {
+  for (const value of candidates) {
+    const v = (value || '').trim();
+    if (!v) continue;
+    if (v.includes('rpc.trashscan.io')) continue;
+    return v;
+  }
+  return 'https://rpc.gorbagana.wtf/';
+}
+
+const RPC = pickRpcUrl(
+  process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL,
+  process.env.NEXT_PUBLIC_RPC_URL
+);
 
 // Prices shown in UI (optional)
 const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || '1';
@@ -385,13 +398,30 @@ async function connectBackpack(): Promise<string> {
 }
 
 function pickImage(asset: DasAsset): string | '' {
-  const metaImage = asset?.content?.metadata?.image;
+  const normalizeUri = (input?: string) => {
+    const value = (input || '').trim();
+    if (!value) return '';
+    if (value.startsWith('ipfs://')) {
+      return `https://ipfs.io/ipfs/${value.slice('ipfs://'.length).replace(/^ipfs\//, '')}`;
+    }
+    if (value.startsWith('ar://')) {
+      return `https://arweave.net/${value.slice('ar://'.length)}`;
+    }
+    try {
+      new URL(value);
+      return value;
+    } catch {
+      return '';
+    }
+  };
+
+  const metaImage = normalizeUri(asset?.content?.metadata?.image);
   if (metaImage) return metaImage;
-  const img = asset?.content?.links?.image;
+  const img = normalizeUri(asset?.content?.links?.image);
   if (img) return img;
   const files = asset?.content?.files || [];
-  const imageFile = files.find((f) => (f?.mime || '').startsWith('image/') && f?.uri);
-  return imageFile?.uri || '';
+  const imageFile = files.find((f) => (f?.mime || '').startsWith('image/') && normalizeUri(f?.uri));
+  return normalizeUri(imageFile?.uri) || '';
 }
 
 function isCollectionAsset(asset: DasAsset): boolean {

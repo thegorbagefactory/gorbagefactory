@@ -16,6 +16,7 @@ const RPC =
   process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL ||
   process.env.NEXT_PUBLIC_RPC_URL ||
   "https://rpc.gorbagana.wtf/";
+const SAFE_RPC = RPC.includes("rpc.trashscan.io") ? "https://rpc.gorbagana.wtf/" : RPC;
 
 if (!Number.isFinite(CACHE_TTL_MS) || CACHE_TTL_MS <= 0) {
   throw new Error("Invalid NFT_CACHE_TTL_MS");
@@ -32,7 +33,7 @@ if (!Number.isFinite(MAX_ITEMS) || MAX_ITEMS <= 0) {
 
 type CacheEntry = { data: any[]; updatedAt: number };
 const cache = new Map<string, CacheEntry>();
-const connection = new Connection(RPC, "confirmed");
+const connection = new Connection(SAFE_RPC, "confirmed");
 const metaplex = Metaplex.make(connection);
 
 function isValidOwner(owner: string) {
@@ -94,8 +95,21 @@ async function fetchOwnedNftMints(owner: PublicKey): Promise<string[]> {
 }
 
 function toAsset(mint: string, data: { name?: string; symbol?: string; image?: string }) {
+  const normalizeUri = (input?: string) => {
+    const value = (input || "").trim();
+    if (!value) return "";
+    if (value.startsWith("ipfs://")) {
+      return `https://ipfs.io/ipfs/${value.slice("ipfs://".length).replace(/^ipfs\//, "")}`;
+    }
+    if (value.startsWith("ar://")) {
+      return `https://arweave.net/${value.slice("ar://".length)}`;
+    }
+    if (value.startsWith("http://") || value.startsWith("https://")) return value;
+    return "";
+  };
+
   const name = data.name?.trim() || mint.slice(0, 8);
-  const image = data.image?.trim() || "";
+  const image = normalizeUri(data.image);
   const symbol = data.symbol?.trim() || "";
   return {
     id: mint,

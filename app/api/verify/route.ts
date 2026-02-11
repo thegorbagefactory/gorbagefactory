@@ -37,6 +37,7 @@ const RPC =
   process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL ||
   process.env.NEXT_PUBLIC_RPC_URL ||
   "https://rpc.gorbagana.wtf/";
+const SAFE_RPC = RPC.includes("rpc.trashscan.io") ? "https://rpc.gorbagana.wtf/" : RPC;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -680,8 +681,8 @@ export async function POST(req: Request) {
         (process.env.GORBAGANA_RPC_FALLBACKS || process.env.NEXT_PUBLIC_GORBAGANA_RPC_FALLBACKS || "")
           .split(",")
           .map((s) => s.trim())
-          .filter(Boolean);
-      const rpcList = [RPC, ...rpcFallbacks.filter((r) => r !== RPC)];
+          .filter((s) => Boolean(s) && !s.includes("rpc.trashscan.io"));
+      const rpcList = [SAFE_RPC, ...rpcFallbacks.filter((r) => r !== SAFE_RPC)];
 
       let tx: any = null;
       let connection: Connection | null = null;
