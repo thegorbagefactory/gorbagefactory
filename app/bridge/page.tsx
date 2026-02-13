@@ -55,6 +55,7 @@ export default function BridgePage() {
   const [wallet, setWallet] = useState("");
   const [walletErr, setWalletErr] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [showWalletMenu, setShowWalletMenu] = useState(false);
 
   const machineData = useMemo(
     () => MACHINE_OPTIONS.find((m) => m.id === machine) || MACHINE_OPTIONS[0],
@@ -73,18 +74,24 @@ export default function BridgePage() {
     setEffectIndex(0);
   }, [machine]);
 
-  async function onConnectWallet() {
+  async function onConnectWallet(providerKey: "phantom" | "solflare" | "backpack") {
     setWalletErr("");
     if (connecting) return;
     try {
       setConnecting(true);
       const anyWindow = window as any;
-      const provider = anyWindow?.backpack?.solana || anyWindow?.solana;
-      if (!provider?.connect) throw new Error("Backpack is not available");
+      const providerMap = {
+        phantom: anyWindow?.phantom?.solana || (anyWindow?.solana?.isPhantom ? anyWindow?.solana : null),
+        solflare: anyWindow?.solflare || (anyWindow?.solana?.isSolflare ? anyWindow?.solana : null),
+        backpack: anyWindow?.backpack?.solana || (anyWindow?.solana?.isBackpack ? anyWindow?.solana : null),
+      };
+      const provider = providerMap[providerKey];
+      if (!provider?.connect) throw new Error(`${providerKey[0].toUpperCase()}${providerKey.slice(1)} is not available`);
       const res = await provider.connect();
       const key = res?.publicKey?.toString?.() || provider?.publicKey?.toString?.() || "";
       if (!key) throw new Error("Wallet connected but no public key returned");
       setWallet(key);
+      setShowWalletMenu(false);
     } catch (err: any) {
       setWalletErr(err?.message || "Wallet connection failed");
     } finally {
@@ -115,10 +122,33 @@ export default function BridgePage() {
           <div className={`bridge-chip ${wallet ? "online" : ""}`}>
             {wallet ? `Wallet: ${wallet.slice(0, 4)}...${wallet.slice(-4)}` : "Wallet Offline"}
           </div>
-          <button className="btn btn-wallet" onClick={wallet ? () => setWallet("") : onConnectWallet}>
-            {connecting ? "Connecting..." : wallet ? "Disconnect Backpack" : "Connect Backpack"}
+          <button
+            className="btn btn-wallet"
+            onClick={
+              wallet
+                ? () => setWallet("")
+                : () => {
+                    setWalletErr("");
+                    setShowWalletMenu((v) => !v);
+                  }
+            }
+          >
+            {connecting ? "Connecting..." : wallet ? "Disconnect Wallet" : "Connect Wallet"}
           </button>
         </div>
+        {!wallet && showWalletMenu ? (
+          <div className="bridge-wallet-menu">
+            <button className="wallet-option" onClick={() => onConnectWallet("phantom")} disabled={connecting}>
+              Phantom
+            </button>
+            <button className="wallet-option" onClick={() => onConnectWallet("solflare")} disabled={connecting}>
+              Solflare
+            </button>
+            <button className="wallet-option" onClick={() => onConnectWallet("backpack")} disabled={connecting}>
+              Backpack
+            </button>
+          </div>
+        ) : null}
         {walletErr ? <div className="bridge-wallet-err">{walletErr}</div> : null}
 
         <div className="bridge-grid">
@@ -351,6 +381,26 @@ export default function BridgePage() {
           margin: -6px 0 12px;
           font-size: 12px;
           color: rgba(255, 130, 130, 0.95);
+        }
+        .bridge-wallet-menu {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin: -4px 0 12px;
+        }
+        .wallet-option {
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          background: rgba(255, 255, 255, 0.06);
+          color: rgba(255, 255, 255, 0.9);
+          padding: 8px 12px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .wallet-option:hover {
+          border-color: rgba(0, 255, 170, 0.42);
+          background: rgba(0, 255, 170, 0.12);
         }
         .bridge-card {
           border: 1px solid rgba(255, 255, 255, 0.11);
