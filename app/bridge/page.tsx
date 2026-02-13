@@ -1,8 +1,18 @@
 'use client';
 import { useEffect, useMemo, useState } from "react";
+import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 const BRIDGE_ENABLED = (process.env.NEXT_PUBLIC_BRIDGE_ENABLED || "false").toLowerCase() === "true";
+const RPC = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || "https://rpc.trashscan.io";
 type Machine = "CONVEYOR" | "COMPACTOR" | "HAZMAT";
+type TierId = "tier1" | "tier2" | "tier3";
+type DasAsset = {
+  id: string;
+  content?: {
+    metadata?: { name?: string; image?: string };
+    links?: { image?: string };
+  };
+};
 
 const MACHINE_OPTIONS: Array<{
   id: Machine;
@@ -42,19 +52,18 @@ const MACHINE_OPTIONS: Array<{
   },
 ];
 
-const SAMPLE_SOURCE = [
-  { id: "s1", name: "Gorigin #4077", image: "/gorbage-logo.png" },
-  { id: "s2", name: "Gorigin #2867", image: "/gorbage-logo.png" },
-  { id: "s3", name: "Trashscan OG #14", image: "/gorbage-logo.png" },
-];
-
 export default function BridgePage() {
+  const connection = useMemo(() => new Connection(RPC, "confirmed"), []);
   const [machine, setMachine] = useState<Machine>("CONVEYOR");
-  const [selected, setSelected] = useState(SAMPLE_SOURCE[0]);
+  const [selected, setSelected] = useState<DasAsset | null>(null);
   const [effectIndex, setEffectIndex] = useState(0);
   const [wallet, setWallet] = useState("");
   const [walletErr, setWalletErr] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [nfts, setNfts] = useState<DasAsset[]>([]);
+  const [loadingNfts, setLoadingNfts] = useState(false);
+  const [status, setStatus] = useState("Connect wallet to start bridge.");
+  const [isRunning, setIsRunning] = useState(false);
 
   const machineData = useMemo(
     () => MACHINE_OPTIONS.find((m) => m.id === machine) || MACHINE_OPTIONS[0],
@@ -73,6 +82,25 @@ export default function BridgePage() {
     setEffectIndex(0);
   }, [machine]);
 
+  const tierForMachine: Record<Machine, TierId> = {
+    CONVEYOR: "tier1",
+    COMPACTOR: "tier2",
+    HAZMAT: "tier3",
+  };
+
+  function getProvider() {
+    const anyWindow = window as any;
+    return anyWindow?.backpack?.solana || anyWindow?.phantom?.solana || anyWindow?.solflare || anyWindow?.solana;
+  }
+
+  function pickImage(asset?: DasAsset | null): string {
+    return asset?.content?.metadata?.image || asset?.content?.links?.image || "/gorbage-logo.png";
+  }
+
+  function pickName(asset?: DasAsset | null): string {
+    return asset?.content?.metadata?.name || (asset?.id ? `${asset.id.slice(0, 4)}...${asset.id.slice(-4)}` : "Unknown NFT");
+  }
+
   async function onConnectWallet() {
     setWalletErr("");
     if (connecting) return;
@@ -89,10 +117,105 @@ export default function BridgePage() {
       const key = res?.publicKey?.toString?.() || provider?.publicKey?.toString?.() || "";
       if (!key) throw new Error("Wallet connected but no public key returned");
       setWallet(key);
+      setStatus("Connected. Loading NFTs...");
+      await loadNfts(key);
     } catch (err: any) {
       setWalletErr(err?.message || "Wallet connection failed");
+      setStatus("Connect wallet to continue.");
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function loadNfts(owner = wallet) {
+    if (!owner) return;
+    setLoadingNfts(true);
+    try {
+      const res = await fetch(`/api/nfts?owner=${owner}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to load NFTs");
+      const items = (data?.items || []) as DasAsset[];
+      setNfts(items);
+      if (!selected && items[0]) setSelected(items[0]);
+      setStatus(items.length ? "Pick an NFT and run the bridge." : "No NFTs found in this wallet.");
+    } catch (err: any) {
+      setStatus(err?.message || "Failed to load NFTs.");
+    } finally {
+      setLoadingNfts(false);
+    }
+  }
+
+  async function runBridge() {
+    if (!wallet) return setStatus("Connect wallet first.");
+    if (!selected) return setStatus("Select an NFT first.");
+    if (isRunning) return;
+
+    setIsRunning(true);
+    try {
+      setStatus("Preparing payment...");
+      const quoteRes = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ machine }),
+      });
+      const quote = await quoteRes.json();
+      if (!quoteRes.ok || !quote?.ok) throw new Error(quote?.error || "Failed to create payment.");
+
+      const provider = getProvider();
+      if (!provider) throw new Error("Wallet provider not found.");
+      const payer = new PublicKey(wallet);
+      const treasury = new PublicKey(quote.treasury);
+      const lamports = Number(quote.amountLamports);
+      const latest = await connection.getLatestBlockhash("processed");
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: payer,
+          toPubkey: treasury,
+          lamports,
+        })
+      );
+      tx.feePayer = payer;
+      tx.recentBlockhash = latest.blockhash;
+
+      setStatus("Approve payment in wallet...");
+      let signature = "";
+      if (typeof provider.signAndSendTransaction === "function") {
+        const res = await provider.signAndSendTransaction(tx);
+        signature = res?.signature || res;
+      } else if (typeof provider.signTransaction === "function") {
+        const signed = await provider.signTransaction(tx);
+        signature = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: true,
+          maxRetries: 8,
+          preflightCommitment: "processed",
+        });
+      } else {
+        throw new Error("Wallet does not support Solana transactions.");
+      }
+
+      setStatus("Payment sent. Finalizing mint...");
+      const verifyRes = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signature,
+          payer: wallet,
+          machine,
+          tier: tierForMachine[machine],
+          originalMint: selected.id,
+          imageUrl: pickImage(selected),
+          name: pickName(selected),
+        }),
+      });
+      const verify = await verifyRes.json();
+      if (!verifyRes.ok || !verify?.ok) throw new Error(verify?.error || "Verification failed");
+
+      setStatus("Bridge mint complete.");
+      await loadNfts(wallet);
+    } catch (err: any) {
+      setStatus(err?.message || "Bridge run failed.");
+    } finally {
+      setIsRunning(false);
     }
   }
 
@@ -123,11 +246,19 @@ export default function BridgePage() {
             className="btn btn-wallet"
             onClick={
               wallet
-                ? () => setWallet("")
+                ? () => {
+                    setWallet("");
+                    setNfts([]);
+                    setSelected(null);
+                    setStatus("Connect wallet to start bridge.");
+                  }
                 : onConnectWallet
             }
           >
             {connecting ? "Connecting..." : wallet ? "Disconnect Wallet" : "Connect Wallet"}
+          </button>
+          <button className="btn btn-ghost" onClick={() => loadNfts()} disabled={!wallet || loadingNfts}>
+            {loadingNfts ? "Loading..." : "Load Wallet NFTs"}
           </button>
         </div>
         {walletErr ? <div className="bridge-wallet-err">{walletErr}</div> : null}
@@ -166,17 +297,18 @@ export default function BridgePage() {
           <div className="panel">
             <div className="panel-title">Pick source NFT (Sol)</div>
             <div className="bridge-nft-grid">
-              {SAMPLE_SOURCE.map((item) => (
+              {nfts.map((item) => (
                 <button
                   key={item.id}
-                  className={`bridge-nft-tile ${selected.id === item.id ? "active" : ""}`}
+                  className={`bridge-nft-tile ${selected?.id === item.id ? "active" : ""}`}
                   onClick={() => setSelected(item)}
                 >
-                  <img src={item.image} alt={item.name} />
-                  <span>{item.name}</span>
+                  <img src={pickImage(item)} alt={pickName(item)} />
+                  <span>{pickName(item)}</span>
                 </button>
               ))}
             </div>
+            {!nfts.length ? <div className="muted">No NFTs loaded yet.</div> : null}
           </div>
           <div className="panel">
             <div className="panel-title">Factory Screen (GOR output)</div>
@@ -187,12 +319,12 @@ export default function BridgePage() {
               </span>
             </div>
             <div className={`panel-box bridge-preview ${machine.toLowerCase()}`}>
-              <img src={selected.image} alt={selected.name} />
+              <img src={pickImage(selected)} alt={pickName(selected)} />
               <div className="preview-grime" />
               <div className="preview-vignette" />
               <div className="preview-overlay" />
             </div>
-            <div className="bridge-preview-picked">Selected: {selected.name}</div>
+            <div className="bridge-preview-picked">Selected: {pickName(selected)}</div>
           </div>
         </div>
 
@@ -226,13 +358,14 @@ export default function BridgePage() {
         </section>
 
         <div className="bridge-actions">
-          <button className="btn btn-primary" disabled>
-            Start Bridge (Soon)
+          <button className="btn btn-primary" disabled={isRunning || !wallet || !selected} onClick={runBridge}>
+            {isRunning ? "Running Bridge..." : "Start Bridge"}
           </button>
           <a className="btn btn-ghost" href="/">
             Back to Remix Engine
           </a>
         </div>
+        <div className="bridge-run-status">{status}</div>
       </section>
 
       <style jsx>{`
@@ -719,6 +852,11 @@ export default function BridgePage() {
         .btn-primary:disabled {
           opacity: 0.65;
           cursor: not-allowed;
+        }
+        .bridge-run-status {
+          margin-top: 10px;
+          font-size: 13px;
+          opacity: 0.86;
         }
         .btn-ghost {
           background: rgba(255, 255, 255, 0.06);
