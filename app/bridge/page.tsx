@@ -131,7 +131,7 @@ export default function BridgePage() {
     if (!owner) return;
     setLoadingNfts(true);
     try {
-      const res = await fetch(`/api/nfts?owner=${owner}`, { cache: "no-store" });
+      const res = await fetch(`/api/bridge/nfts?owner=${owner}`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load NFTs");
       const items = (data?.items || []) as DasAsset[];
