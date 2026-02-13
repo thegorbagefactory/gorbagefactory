@@ -76,9 +76,9 @@ if (!Number.isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
   throw new Error("Invalid GOR_LAMPORTS configuration");
 }
 
-const PRICE_CONVEYOR = Number(process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "1");
-const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "3500");
-const PRICE_HAZMAT = Number(process.env.PRICE_HAZMAT_GOR ?? process.env.PRICE_HAZMAT_GGOR ?? "4500");
+const PRICE_CONVEYOR = Number(process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "3000");
+const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "4250");
+const PRICE_HAZMAT = Number(process.env.PRICE_HAZMAT_GOR ?? process.env.PRICE_HAZMAT_GGOR ?? "5000");
 const TIER1_CAP = Number(process.env.TIER1_CAP ?? "3000");
 const TIER2_CAP = Number(process.env.TIER2_CAP ?? "999");
 const TIER3_CAP = Number(process.env.TIER3_CAP ?? "444");

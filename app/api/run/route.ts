@@ -22,10 +22,10 @@ if (!Number.isFinite(GOR_LAMPORTS) || GOR_LAMPORTS <= 0) {
 }
 
 // New pricing: $5 / $7 / $9 => 2500 / 3500 / 4500 $GOR
-const PRICE_CONVEYOR_RAW = process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "1";
+const PRICE_CONVEYOR_RAW = process.env.PRICE_CONVEYOR_GOR ?? process.env.PRICE_CONVEYOR_GGOR ?? "3000";
 const PRICE_CONVEYOR = Number(PRICE_CONVEYOR_RAW);
-const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "3500");
-const PRICE_HAZMAT = Number(process.env.PRICE_HAZMAT_GOR ?? process.env.PRICE_HAZMAT_GGOR ?? "4500");
+const PRICE_COMPACTOR = Number(process.env.PRICE_COMPACTOR_GOR ?? process.env.PRICE_COMPACTOR_GGOR ?? "4250");
+const PRICE_HAZMAT = Number(process.env.PRICE_HAZMAT_GOR ?? process.env.PRICE_HAZMAT_GGOR ?? "5000");
 const TIER1_CAP = Number(process.env.TIER1_CAP ?? "3000");
 const TIER2_CAP = Number(process.env.TIER2_CAP ?? "999");
 const TIER3_CAP = Number(process.env.TIER3_CAP ?? "444");

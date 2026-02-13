@@ -40,11 +40,11 @@ const RPC = pickRpcUrl(
 );
 
 // Prices shown in UI (optional)
-const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || '1';
+const PRICE_CONVEYOR_RAW = process.env.NEXT_PUBLIC_PRICE_CONVEYOR || '3000';
 const PRICE: Record<Machine, number> = {
   CONVEYOR: Number(PRICE_CONVEYOR_RAW),
-  COMPACTOR: Number(process.env.NEXT_PUBLIC_PRICE_COMPACTOR || '3500'),
-  HAZMAT: Number(process.env.NEXT_PUBLIC_PRICE_HAZMAT || '4500'),
+  COMPACTOR: Number(process.env.NEXT_PUBLIC_PRICE_COMPACTOR || '4250'),
+  HAZMAT: Number(process.env.NEXT_PUBLIC_PRICE_HAZMAT || '5000'),
 };
 
 const COLLECTION_MINT =
