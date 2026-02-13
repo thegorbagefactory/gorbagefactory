@@ -18,9 +18,9 @@ export default function BridgePage() {
 
       <section className="bridge-shell">
         <div className="bridge-badge">Trash Bridge</div>
-        <h1 className="bridge-title">Bridge Sol NFTs to GOR with a Remix</h1>
+        <h1 className="bridge-title">Turn your Solana NFT into fresh GOR-grade garbage.</h1>
         <p className="bridge-copy">
-          Phase A will lock a Sol NFT, run the same remix engine, and mint a fresh GOR output in the bridge collection.
+          Lock it, remix it, and mint a brand-new Trash Bridge output.
         </p>
 
         <div className="bridge-grid">
