@@ -52,6 +52,9 @@ export default function BridgePage() {
   const [machine, setMachine] = useState<Machine>("CONVEYOR");
   const [selected, setSelected] = useState(SAMPLE_SOURCE[0]);
   const [effectIndex, setEffectIndex] = useState(0);
+  const [wallet, setWallet] = useState("");
+  const [walletErr, setWalletErr] = useState("");
+  const [connecting, setConnecting] = useState(false);
 
   const machineData = useMemo(
     () => MACHINE_OPTIONS.find((m) => m.id === machine) || MACHINE_OPTIONS[0],
@@ -69,6 +72,25 @@ export default function BridgePage() {
   useEffect(() => {
     setEffectIndex(0);
   }, [machine]);
+
+  async function onConnectWallet() {
+    setWalletErr("");
+    if (connecting) return;
+    try {
+      setConnecting(true);
+      const anyWindow = window as any;
+      const provider = anyWindow?.backpack?.solana || anyWindow?.solana;
+      if (!provider?.connect) throw new Error("Backpack is not available");
+      const res = await provider.connect();
+      const key = res?.publicKey?.toString?.() || provider?.publicKey?.toString?.() || "";
+      if (!key) throw new Error("Wallet connected but no public key returned");
+      setWallet(key);
+    } catch (err: any) {
+      setWalletErr(err?.message || "Wallet connection failed");
+    } finally {
+      setConnecting(false);
+    }
+  }
 
   return (
     <main className="bridge-root">
@@ -89,6 +111,15 @@ export default function BridgePage() {
         <p className="bridge-copy">
           Lock it, remix it, and mint a brand-new Trash Bridge output.
         </p>
+        <div className="bridge-wallet-row">
+          <div className={`bridge-chip ${wallet ? "online" : ""}`}>
+            {wallet ? `Wallet: ${wallet.slice(0, 4)}...${wallet.slice(-4)}` : "Wallet Offline"}
+          </div>
+          <button className="btn btn-wallet" onClick={wallet ? () => setWallet("") : onConnectWallet}>
+            {connecting ? "Connecting..." : wallet ? "Disconnect Backpack" : "Connect Backpack"}
+          </button>
+        </div>
+        {walletErr ? <div className="bridge-wallet-err">{walletErr}</div> : null}
 
         <div className="bridge-grid">
           <article className="bridge-card">
@@ -295,6 +326,31 @@ export default function BridgePage() {
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 16px;
+        }
+        .bridge-wallet-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+        .bridge-chip {
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 999px;
+          padding: 10px 12px;
+          font-size: 12px;
+          background: rgba(255, 255, 255, 0.06);
+          color: rgba(255, 255, 255, 0.9);
+        }
+        .bridge-chip.online {
+          border-color: rgba(0, 255, 160, 0.45);
+          background: rgba(0, 255, 160, 0.12);
+          color: rgba(170, 255, 220, 0.95);
+        }
+        .bridge-wallet-err {
+          margin: -6px 0 12px;
+          font-size: 12px;
+          color: rgba(255, 130, 130, 0.95);
         }
         .bridge-card {
           border: 1px solid rgba(255, 255, 255, 0.11);
@@ -509,6 +565,18 @@ export default function BridgePage() {
           border-color: rgba(0, 255, 160, 0.5);
           box-shadow: 0 0 0 1px rgba(0, 255, 160, 0.24) inset, 0 10px 26px rgba(0, 0, 0, 0.3);
         }
+        .machine-tile.conveyor {
+          border-left: 4px solid rgba(255, 200, 80, 0.8);
+          background: linear-gradient(160deg, rgba(26, 18, 10, 0.45), rgba(8, 10, 8, 0.92));
+        }
+        .machine-tile.compactor {
+          border-left: 4px solid rgba(120, 255, 200, 0.82);
+          background: linear-gradient(160deg, rgba(10, 24, 20, 0.52), rgba(8, 10, 8, 0.92));
+        }
+        .machine-tile.hazmat {
+          border-left: 4px solid rgba(255, 255, 255, 0.35);
+          background: linear-gradient(160deg, rgba(18, 18, 10, 0.55), rgba(8, 10, 8, 0.94));
+        }
         .machine-pull {
           font-size: 11px;
           letter-spacing: 0.06em;
@@ -516,10 +584,45 @@ export default function BridgePage() {
           opacity: 0.72;
           margin-bottom: 6px;
         }
+        .machine-tile.hazmat .machine-pull {
+          background: linear-gradient(
+            90deg,
+            #ff5f6d 0%,
+            #ffc371 16%,
+            #d4ff6b 32%,
+            #6bffb8 48%,
+            #5ecbff 64%,
+            #8b7bff 80%,
+            #ff6bcb 100%
+          );
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          animation: rainbowSlide 3.2s linear infinite;
+          background-size: 200% 100%;
+          opacity: 1;
+        }
         .machine-name {
           font-size: 18px;
           font-weight: 800;
           margin-bottom: 10px;
+        }
+        .machine-tile.hazmat .machine-name {
+          background: linear-gradient(
+            90deg,
+            #ff5f6d 0%,
+            #ffc371 16%,
+            #d4ff6b 32%,
+            #6bffb8 48%,
+            #5ecbff 64%,
+            #8b7bff 80%,
+            #ff6bcb 100%
+          );
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          background-size: 200% 100%;
+          animation: rainbowSlide 3.2s linear infinite;
         }
         .machine-meter {
           font-size: 12px;
@@ -538,6 +641,26 @@ export default function BridgePage() {
           border-radius: 999px;
           background: linear-gradient(90deg, rgba(0, 255, 170, 0.8), rgba(90, 255, 200, 0.8));
         }
+        .machine-tile.conveyor .meter-fill {
+          background: linear-gradient(90deg, rgba(255, 200, 80, 0.95), rgba(255, 120, 80, 0.78));
+        }
+        .machine-tile.compactor .meter-fill {
+          background: linear-gradient(90deg, rgba(120, 255, 200, 0.95), rgba(60, 180, 140, 0.78));
+        }
+        .machine-tile.hazmat .meter-fill {
+          background: linear-gradient(
+            90deg,
+            #ff5f6d 0%,
+            #ffc371 16%,
+            #d4ff6b 32%,
+            #6bffb8 48%,
+            #5ecbff 64%,
+            #8b7bff 80%,
+            #ff6bcb 100%
+          );
+          background-size: 200% 100%;
+          animation: rainbowSlide 3.2s linear infinite;
+        }
         .machine-bottom {
           display: flex;
           justify-content: space-between;
@@ -545,9 +668,18 @@ export default function BridgePage() {
           font-size: 12px;
           opacity: 0.85;
         }
+        .machine-tile.conveyor.active {
+          border-color: rgba(255, 210, 120, 0.4);
+          box-shadow: 0 0 0 1px rgba(255, 200, 80, 0.2) inset, 0 10px 26px rgba(0, 0, 0, 0.35);
+        }
+        .machine-tile.compactor.active {
+          border-color: rgba(120, 255, 200, 0.4);
+          box-shadow: 0 0 0 1px rgba(120, 255, 200, 0.22) inset, 0 10px 26px rgba(0, 0, 0, 0.35);
+        }
         .machine-tile.hazmat.active {
-          border-color: rgba(190, 90, 255, 0.72);
-          box-shadow: 0 0 0 1px rgba(210, 110, 255, 0.25) inset, 0 0 22px rgba(195, 90, 255, 0.25);
+          border-color: rgba(255, 255, 255, 0.42);
+          box-shadow: 0 0 0 1px rgba(210, 110, 255, 0.25) inset, 0 0 24px rgba(170, 120, 255, 0.35);
+          animation: mythicGlow 5s linear infinite;
         }
         .bridge-actions {
           display: flex;
@@ -566,6 +698,12 @@ export default function BridgePage() {
         .btn-primary {
           background: linear-gradient(135deg, rgba(0, 255, 160, 0.18), rgba(0, 80, 60, 0.36));
           border-color: rgba(0, 255, 170, 0.42);
+        }
+        .btn-wallet {
+          background: radial-gradient(circle at 20% 0%, rgba(0, 255, 180, 0.24), rgba(0, 0, 0, 0.12)),
+            linear-gradient(140deg, rgba(0, 40, 30, 0.8), rgba(0, 16, 12, 0.9));
+          border-color: rgba(0, 255, 170, 0.55);
+          box-shadow: 0 0 18px rgba(0, 255, 140, 0.2);
         }
         .btn-primary:disabled {
           opacity: 0.65;
@@ -590,6 +728,23 @@ export default function BridgePage() {
             filter: hue-rotate(360deg);
           }
         }
+        @keyframes rainbowSlide {
+          from {
+            background-position: 0% 50%;
+          }
+          to {
+            background-position: 200% 50%;
+          }
+        }
+        @keyframes mythicGlow {
+          0%,
+          100% {
+            filter: hue-rotate(0deg);
+          }
+          50% {
+            filter: hue-rotate(60deg);
+          }
+        }
         @media (max-width: 900px) {
           .bridge-grid {
             grid-template-columns: 1fr;
@@ -609,6 +764,10 @@ export default function BridgePage() {
           .bridge-machine-head {
             flex-direction: column;
             align-items: flex-start;
+          }
+          .bridge-wallet-row {
+            flex-direction: column;
+            align-items: stretch;
           }
           .bridge-preview-meta {
             flex-direction: column;
