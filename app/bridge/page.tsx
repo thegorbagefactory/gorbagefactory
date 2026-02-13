@@ -1,8 +1,75 @@
 'use client';
+import { useEffect, useMemo, useState } from "react";
 
 const BRIDGE_ENABLED = (process.env.NEXT_PUBLIC_BRIDGE_ENABLED || "false").toLowerCase() === "true";
+type Machine = "CONVEYOR" | "COMPACTOR" | "HAZMAT";
+
+const MACHINE_OPTIONS: Array<{
+  id: Machine;
+  pull: string;
+  name: string;
+  cost: number;
+  odds: string;
+  intensity: number;
+  effects: string[];
+}> = [
+  {
+    id: "CONVEYOR",
+    pull: "Common Pull",
+    name: "Conveyor Bin",
+    cost: 3000,
+    odds: "80/18/2",
+    intensity: 0.42,
+    effects: ["Rust Chrome", "Oil Slick", "Grime Wash", "Smog Streaks"],
+  },
+  {
+    id: "COMPACTOR",
+    pull: "Rare Pull",
+    name: "Forge Compactor",
+    cost: 4250,
+    odds: "65/30/5",
+    intensity: 0.72,
+    effects: ["Toxic Slime Glow", "Dumpster Drip", "Mold Bloom", "Leachate Sheen"],
+  },
+  {
+    id: "HAZMAT",
+    pull: "Mythic Pull",
+    name: "Hazmat Shrine",
+    cost: 5000,
+    odds: "45/45/10",
+    intensity: 1,
+    effects: ["Biohazard Aura", "Nuclear Afterglow", "Gamma Bloom", "Golden Dumpster"],
+  },
+];
+
+const SAMPLE_SOURCE = [
+  { id: "s1", name: "Gorigin #4077", image: "/gorbage-logo.png" },
+  { id: "s2", name: "Gorigin #2867", image: "/gorbage-logo.png" },
+  { id: "s3", name: "Trashscan OG #14", image: "/gorbage-logo.png" },
+];
 
 export default function BridgePage() {
+  const [machine, setMachine] = useState<Machine>("CONVEYOR");
+  const [selected, setSelected] = useState(SAMPLE_SOURCE[0]);
+  const [effectIndex, setEffectIndex] = useState(0);
+
+  const machineData = useMemo(
+    () => MACHINE_OPTIONS.find((m) => m.id === machine) || MACHINE_OPTIONS[0],
+    [machine]
+  );
+  const effectName = machineData.effects[effectIndex % machineData.effects.length];
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setEffectIndex((v) => v + 1);
+    }, 2800);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    setEffectIndex(0);
+  }, [machine]);
+
   return (
     <main className="bridge-root">
       <div className="bridge-bg">
@@ -53,16 +120,68 @@ export default function BridgePage() {
           </div>
         </div>
 
-        <div className="bridge-panels">
+        <div className="bridge-panels bridge-panels-top">
           <div className="panel">
-            <div className="panel-title">Source NFT (Sol)</div>
-            <div className="panel-box muted">Selection UI next</div>
+            <div className="panel-title">Pick source NFT (Sol)</div>
+            <div className="bridge-nft-grid">
+              {SAMPLE_SOURCE.map((item) => (
+                <button
+                  key={item.id}
+                  className={`bridge-nft-tile ${selected.id === item.id ? "active" : ""}`}
+                  onClick={() => setSelected(item)}
+                >
+                  <img src={item.image} alt={item.name} />
+                  <span>{item.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
           <div className="panel">
-            <div className="panel-title">Remixed Output (GOR)</div>
-            <div className="panel-box muted">Preview UI next</div>
+            <div className="panel-title">Factory Screen (GOR output)</div>
+            <div className="bridge-preview-meta">
+              <span>{machineData.name}</span>
+              <span>
+                Effect: {effectName} <em>+ 3 traits</em>
+              </span>
+            </div>
+            <div className={`panel-box bridge-preview ${machine.toLowerCase()}`}>
+              <img src={selected.image} alt={selected.name} />
+              <div className="preview-grime" />
+              <div className="preview-vignette" />
+              <div className="preview-overlay" />
+            </div>
+            <div className="bridge-preview-picked">Selected: {selected.name}</div>
           </div>
         </div>
+
+        <section className="bridge-machine">
+          <div className="bridge-machine-head">
+            <div className="bridge-machine-title">Pick your remix machine</div>
+            <div className="bridge-machine-sub">Tap a bay to preview its strongest effects</div>
+          </div>
+          <div className="bridge-machine-grid">
+            {MACHINE_OPTIONS.map((m) => (
+              <button
+                key={m.id}
+                className={`machine-tile ${machine === m.id ? "active" : ""} ${m.id.toLowerCase()}`}
+                onClick={() => setMachine(m.id)}
+              >
+                <div className="machine-pull">{m.pull}</div>
+                <div className="machine-name">{m.name}</div>
+                <div className="machine-meter">
+                  <span>Effect Intensity</span>
+                  <div className="meter-track">
+                    <div className="meter-fill" style={{ width: `${m.intensity * 100}%` }} />
+                  </div>
+                </div>
+                <div className="machine-bottom">
+                  <span>{m.cost} $GOR</span>
+                  <span>ODDS {m.odds}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <div className="bridge-actions">
           <button className="btn btn-primary" disabled>
@@ -235,6 +354,9 @@ export default function BridgePage() {
           gap: 12px;
           margin-bottom: 18px;
         }
+        .bridge-panels-top {
+          align-items: start;
+        }
         .panel {
           border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 14px;
@@ -255,10 +377,177 @@ export default function BridgePage() {
           place-items: center;
           border: 1px dashed rgba(255, 255, 255, 0.16);
           background: rgba(0, 0, 0, 0.2);
+          overflow: hidden;
+          position: relative;
         }
         .muted {
           opacity: 0.7;
           font-size: 13px;
+        }
+        .bridge-nft-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .bridge-nft-tile {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 10px;
+          padding: 8px;
+          color: rgba(255, 255, 255, 0.92);
+          text-align: left;
+          cursor: pointer;
+        }
+        .bridge-nft-tile.active {
+          border-color: rgba(0, 255, 170, 0.5);
+          box-shadow: 0 0 0 1px rgba(0, 255, 170, 0.2) inset;
+        }
+        .bridge-nft-tile img {
+          width: 100%;
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: 8px;
+          margin-bottom: 6px;
+        }
+        .bridge-nft-tile span {
+          display: block;
+          font-size: 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          opacity: 0.86;
+        }
+        .bridge-preview-meta {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          font-size: 12px;
+          opacity: 0.86;
+          margin-bottom: 8px;
+        }
+        .bridge-preview-meta em {
+          font-style: normal;
+          opacity: 0.7;
+          margin-left: 6px;
+        }
+        .bridge-preview img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          image-rendering: pixelated;
+          z-index: 1;
+          position: relative;
+        }
+        .preview-grime,
+        .preview-vignette,
+        .preview-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 2;
+          pointer-events: none;
+        }
+        .preview-grime {
+          background-image: radial-gradient(rgba(20, 20, 20, 0.28) 2px, transparent 2px);
+          background-size: 18px 18px;
+          mix-blend-mode: multiply;
+          opacity: 0.45;
+        }
+        .preview-vignette {
+          background: radial-gradient(circle at center, transparent 45%, rgba(0, 0, 0, 0.45) 100%);
+        }
+        .bridge-preview.conveyor .preview-overlay {
+          background: linear-gradient(155deg, rgba(240, 170, 40, 0.18), rgba(50, 120, 170, 0.12));
+          mix-blend-mode: overlay;
+        }
+        .bridge-preview.compactor .preview-overlay {
+          background: linear-gradient(140deg, rgba(20, 255, 190, 0.2), rgba(255, 140, 30, 0.1));
+          mix-blend-mode: screen;
+        }
+        .bridge-preview.hazmat .preview-overlay {
+          background: linear-gradient(130deg, rgba(255, 0, 180, 0.18), rgba(80, 255, 110, 0.18), rgba(40, 160, 255, 0.16));
+          mix-blend-mode: screen;
+          animation: huePulse 2.8s linear infinite;
+        }
+        .bridge-preview-picked {
+          margin-top: 8px;
+          font-size: 12px;
+          opacity: 0.82;
+        }
+        .bridge-machine {
+          margin-bottom: 18px;
+        }
+        .bridge-machine-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          margin-bottom: 10px;
+          gap: 10px;
+        }
+        .bridge-machine-title {
+          font-size: 18px;
+          font-weight: 800;
+        }
+        .bridge-machine-sub {
+          font-size: 12px;
+          opacity: 0.72;
+        }
+        .bridge-machine-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .machine-tile {
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.03);
+          padding: 12px;
+          color: rgba(255, 255, 255, 0.94);
+          text-align: left;
+          cursor: pointer;
+        }
+        .machine-tile.active {
+          border-color: rgba(0, 255, 160, 0.5);
+          box-shadow: 0 0 0 1px rgba(0, 255, 160, 0.24) inset, 0 10px 26px rgba(0, 0, 0, 0.3);
+        }
+        .machine-pull {
+          font-size: 11px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.72;
+          margin-bottom: 6px;
+        }
+        .machine-name {
+          font-size: 18px;
+          font-weight: 800;
+          margin-bottom: 10px;
+        }
+        .machine-meter {
+          font-size: 12px;
+          opacity: 0.86;
+          margin-bottom: 10px;
+        }
+        .meter-track {
+          height: 8px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.1);
+          margin-top: 5px;
+          overflow: hidden;
+        }
+        .meter-fill {
+          height: 100%;
+          border-radius: 999px;
+          background: linear-gradient(90deg, rgba(0, 255, 170, 0.8), rgba(90, 255, 200, 0.8));
+        }
+        .machine-bottom {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          font-size: 12px;
+          opacity: 0.85;
+        }
+        .machine-tile.hazmat.active {
+          border-color: rgba(190, 90, 255, 0.72);
+          box-shadow: 0 0 0 1px rgba(210, 110, 255, 0.25) inset, 0 0 22px rgba(195, 90, 255, 0.25);
         }
         .bridge-actions {
           display: flex;
@@ -293,6 +582,14 @@ export default function BridgePage() {
             transform: translate3d(-220px, 0, 0);
           }
         }
+        @keyframes huePulse {
+          from {
+            filter: hue-rotate(0deg);
+          }
+          to {
+            filter: hue-rotate(360deg);
+          }
+        }
         @media (max-width: 900px) {
           .bridge-grid {
             grid-template-columns: 1fr;
@@ -302,6 +599,20 @@ export default function BridgePage() {
           }
           .bridge-nodes {
             grid-template-columns: 1fr 1fr;
+          }
+          .bridge-nft-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+          .bridge-machine-grid {
+            grid-template-columns: 1fr;
+          }
+          .bridge-machine-head {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .bridge-preview-meta {
+            flex-direction: column;
+            gap: 4px;
           }
         }
       `}</style>
