@@ -51,6 +51,7 @@ const COLLECTION_MINT =
   process.env.NEXT_PUBLIC_TRASHTECH_COLLECTION_MINT ||
   process.env.NEXT_PUBLIC_COLLECTION_MINT ||
   '';
+const BRIDGE_ENABLED = (process.env.NEXT_PUBLIC_BRIDGE_ENABLED || 'false').toLowerCase() === 'true';
 
 const priceLabel = (machine: Machine) => {
   const value = PRICE[machine];
@@ -1210,6 +1211,11 @@ export default function Page() {
 
         <div className="gf-headerRight">
           <div className="gf-chip">Batch 001: ScrapTech</div>
+          {BRIDGE_ENABLED ? (
+            <a className="gf-chip gf-chipLink" href="/bridge">
+              Trash Bridge
+            </a>
+          ) : null}
           <div className="gf-chip gf-chipStatus">{wallet ? 'Wallet Connected' : 'Wallet Offline'}</div>
 
           {wallet ? (
@@ -2165,6 +2171,15 @@ export default function Page() {
           background: rgba(255, 255, 255, 0.05);
           padding: 8px 10px;
           border-radius: 999px;
+        }
+        .gf-chipLink {
+          text-decoration: none;
+          color: rgba(255, 255, 255, 0.92);
+          transition: border-color 0.18s ease, background 0.18s ease;
+        }
+        .gf-chipLink:hover {
+          border-color: rgba(0, 255, 160, 0.36);
+          background: rgba(0, 255, 160, 0.12);
         }
         .gf-chipStatus {
           border-color: rgba(0, 255, 120, 0.25);
