@@ -1,5 +1,6 @@
-const BRIDGE_ENABLED =
-  (process.env.BRIDGE_ENABLED || process.env.NEXT_PUBLIC_BRIDGE_ENABLED || "false").toLowerCase() === "true";
+'use client';
+
+const BRIDGE_ENABLED = (process.env.NEXT_PUBLIC_BRIDGE_ENABLED || "false").toLowerCase() === "true";
 
 export default function BridgePage() {
   return (
