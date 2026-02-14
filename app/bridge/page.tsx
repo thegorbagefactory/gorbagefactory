@@ -11,6 +11,7 @@ type DasAsset = {
   content?: {
     metadata?: { name?: string; image?: string };
     links?: { image?: string };
+    files?: Array<{ uri?: string; mime?: string }>;
   };
 };
 
@@ -94,7 +95,14 @@ export default function BridgePage() {
   }
 
   function pickImage(asset?: DasAsset | null): string {
-    return asset?.content?.metadata?.image || asset?.content?.links?.image || "/gorbage-logo.png";
+    const metaImage = asset?.content?.metadata?.image;
+    if (metaImage) return metaImage;
+    const linkImage = asset?.content?.links?.image;
+    if (linkImage) return linkImage;
+    const fileImage =
+      asset?.content?.files?.find((f) => String(f?.mime || "").startsWith("image/"))?.uri ||
+      asset?.content?.files?.[0]?.uri;
+    return fileImage || "/gorbage-logo.png";
   }
 
   function pickName(asset?: DasAsset | null): string {
