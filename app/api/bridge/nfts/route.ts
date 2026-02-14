@@ -11,6 +11,7 @@ const MAX_RPC_MS = Number(process.env.DAS_TIMEOUT_MS ?? 7_000);
 const MAX_JSON_MS = Number(process.env.NFT_JSON_TIMEOUT_MS ?? 3_500);
 const MAX_ITEMS = Number(process.env.NFTS_MAX_ITEMS ?? 50);
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
 
 const SOL_RPC =
   process.env.SOLANA_RPC_URL ||
@@ -82,6 +83,20 @@ function toAsset(mint: string, data: { name?: string; symbol?: string; image?: s
   };
 }
 
+function isVerifiedCollectionAsset(it: any): boolean {
+  const explicitVerified =
+    it?.collection?.verified === true || it?.content?.metadata?.collection?.verified === true;
+  if (explicitVerified) return true;
+
+  const hasCollectionGrouping = Array.isArray(it?.grouping)
+    ? it.grouping.some((g: any) => g?.group_key === "collection" && String(g?.group_value || "").length > 0)
+    : false;
+  const hasVerifiedCreator = Array.isArray(it?.creators)
+    ? it.creators.some((c: any) => c?.verified === true)
+    : false;
+  return hasCollectionGrouping && hasVerifiedCreator;
+}
+
 async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   const allowedInterfaces = new Set(["V1_NFT", "ProgrammableNFT"]);
   const payload = {
@@ -112,6 +127,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
     items.slice(0, MAX_ITEMS).map(async (it: any) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
+      if (BRIDGE_ONLY_VERIFIED && !isVerifiedCollectionAsset(it)) return null;
 
       const balance = Number(it?.token_info?.balance ?? 1);
       if (!Number.isFinite(balance) || balance < 1) return null;
