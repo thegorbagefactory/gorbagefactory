@@ -106,6 +106,12 @@ function isVerifiedCollectionAsset(it: any): boolean {
   return it?.collection?.verified === true || it?.content?.metadata?.collection?.verified === true;
 }
 
+function hasCollectionGrouping(it: any): boolean {
+  return Array.isArray(it?.grouping)
+    ? it.grouping.some((g: any) => g?.group_key === "collection" && String(g?.group_value || "").length > 0)
+    : false;
+}
+
 function looksScammyAsset(it: any): boolean {
   const name = String(it?.content?.metadata?.name || "").toLowerCase();
   const symbol = String(it?.content?.metadata?.symbol || "").toLowerCase();
@@ -143,6 +149,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   const normalizeOne = async (it: any, requireVerified: boolean, requireVerifiedCreator: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
+      if (!hasCollectionGrouping(it)) return null;
       if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
       if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
 
@@ -161,6 +168,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       const jsonUri = String(it?.content?.json_uri || "");
       const jsonImage = jsonUri ? await fetchJsonImage(jsonUri) : "";
       const image = normalizeUri(primaryImage) || jsonImage || "";
+      if (!image) return null;
 
       return toAsset(String(it?.id || ""), {
         name: String(it?.content?.metadata?.name || ""),
