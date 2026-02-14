@@ -34,6 +34,10 @@ const SOL_RPC =
   process.env.SOLANA_RPC_URL ||
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
   "https://api.mainnet-beta.solana.com";
+const SOL_DAS_URL =
+  process.env.SOLANA_DAS_URL ||
+  process.env.NEXT_PUBLIC_SOLANA_DAS_URL ||
+  SOL_RPC;
 
 type CacheEntry = { data: any[]; updatedAt: number };
 const cache = new Map<string, CacheEntry>();
@@ -128,7 +132,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
     },
   };
   const res = await withTimeout(
-    fetch(SOL_RPC, {
+    fetch(SOL_DAS_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
