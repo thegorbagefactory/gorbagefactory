@@ -281,14 +281,25 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, source: "cache", items: cached.data });
     }
 
-    // Default to token-account discovery to avoid DAS spam/airdrop noise.
-    // DAS can be enabled explicitly for broader compressed NFT discovery.
-    let items: any[] = await fetchAssetsViaTokenAccounts(owner);
-    if (!items.length && BRIDGE_USE_DAS) {
+    const hasAllowlist = BRIDGE_MINT_ALLOWLIST.size > 0 || BRIDGE_COLLECTION_ALLOWLIST.size > 0;
+    let items: any[] = [];
+
+    if (hasAllowlist) {
+      // If allowlist is configured, prefer DAS so compressed NFTs on the allowlist can be discovered.
       try {
         items = await fetchAssetsViaDas(owner);
       } catch {
         items = [];
+      }
+    } else {
+      // Default to token-account discovery to avoid DAS spam/airdrop noise.
+      items = await fetchAssetsViaTokenAccounts(owner);
+      if (!items.length && BRIDGE_USE_DAS) {
+        try {
+          items = await fetchAssetsViaDas(owner);
+        } catch {
+          items = [];
+        }
       }
     }
 
