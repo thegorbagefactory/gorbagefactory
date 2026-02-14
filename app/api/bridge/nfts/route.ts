@@ -140,7 +140,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   if (!res.ok) throw new Error(`das rpc ${res.status}`);
   const json: any = await res.json();
   const items = Array.isArray(json?.result?.items) ? json.result.items : [];
-  const normalizeOne = async (it: any, requireVerified: boolean) => {
+  const normalizeOne = async (it: any, requireVerified: boolean, requireVerifiedCreator: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
       if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
@@ -148,10 +148,12 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
 
       const balance = Number(it?.token_info?.balance ?? 1);
       if (!Number.isFinite(balance) || balance < 1) return null;
-      const hasAnyVerifiedCreator = Array.isArray(it?.creators)
-        ? it.creators.some((c: any) => c?.verified === true)
-        : false;
-      if (!hasAnyVerifiedCreator) return null;
+      if (requireVerifiedCreator) {
+        const hasAnyVerifiedCreator = Array.isArray(it?.creators)
+          ? it.creators.some((c: any) => c?.verified === true)
+          : false;
+        if (!hasAnyVerifiedCreator) return null;
+      }
 
       const primaryImage =
         String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
@@ -167,12 +169,18 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       });
   };
 
-  const strict = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, BRIDGE_ONLY_VERIFIED)));
+  const strict = await Promise.all(
+    items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, BRIDGE_ONLY_VERIFIED, true))
+  );
   const strictFiltered = strict.filter((a: any) => a?.id);
   if (strictFiltered.length) return strictFiltered;
 
-  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false)));
-  return relaxed.filter((a: any) => a?.id);
+  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false, false)));
+  const relaxedFiltered = relaxed.filter((a: any) => a?.id);
+  if (relaxedFiltered.length) return relaxedFiltered;
+
+  // Last fallback: token account path (still amount=1, decimals=0).
+  return fetchAssetsViaTokenAccounts(owner);
 }
 
 async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]> {
