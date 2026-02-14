@@ -14,6 +14,18 @@ const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
 const BRIDGE_FILTER_SCAM = (process.env.BRIDGE_FILTER_SCAM ?? "true").toLowerCase() === "true";
 const BRIDGE_ALLOW_TOKEN_FALLBACK = (process.env.BRIDGE_ALLOW_TOKEN_FALLBACK ?? "false").toLowerCase() === "true";
+const BRIDGE_MINT_ALLOWLIST = new Set(
+  String(process.env.BRIDGE_MINT_ALLOWLIST || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+const BRIDGE_COLLECTION_ALLOWLIST = new Set(
+  String(process.env.BRIDGE_COLLECTION_ALLOWLIST || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
 const SCAM_PATTERNS = [
   "airdrop",
   "claim",
@@ -117,8 +129,25 @@ function hasCollectionGrouping(it: any): boolean {
     : false;
 }
 
+function getCollectionMint(it: any): string {
+  const fromGrouping = Array.isArray(it?.grouping)
+    ? it.grouping.find((g: any) => g?.group_key === "collection")?.group_value
+    : "";
+  const fromCollection = it?.collection?.key || it?.content?.metadata?.collection?.key || "";
+  return String(fromGrouping || fromCollection || "").trim();
+}
+
 function hasVerifiedCreator(it: any): boolean {
   return Array.isArray(it?.creators) ? it.creators.some((c: any) => c?.verified === true) : false;
+}
+
+function isAllowlistedAsset(it: any): boolean {
+  if (!BRIDGE_MINT_ALLOWLIST.size && !BRIDGE_COLLECTION_ALLOWLIST.size) return true;
+  const mint = String(it?.id || "").trim();
+  const collectionMint = getCollectionMint(it);
+  if (mint && BRIDGE_MINT_ALLOWLIST.has(mint)) return true;
+  if (collectionMint && BRIDGE_COLLECTION_ALLOWLIST.has(collectionMint)) return true;
+  return false;
 }
 
 function looksScammyAsset(it: any): boolean {
@@ -158,6 +187,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   const normalizeOne = async (it: any, requireVerified: boolean, requireCreator: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
+      if (!isAllowlistedAsset(it)) return null;
       if (!hasCollectionGrouping(it)) return null;
       if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
       if (requireCreator && !hasVerifiedCreator(it)) return null;
