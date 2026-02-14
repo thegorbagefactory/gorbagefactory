@@ -13,6 +13,7 @@ const MAX_ITEMS = Number(process.env.NFTS_MAX_ITEMS ?? 50);
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
 const BRIDGE_FILTER_SCAM = (process.env.BRIDGE_FILTER_SCAM ?? "true").toLowerCase() === "true";
+const BRIDGE_ALLOW_TOKEN_FALLBACK = (process.env.BRIDGE_ALLOW_TOKEN_FALLBACK ?? "false").toLowerCase() === "true";
 const SCAM_PATTERNS = [
   "airdrop",
   "claim",
@@ -26,6 +27,10 @@ const SCAM_PATTERNS = [
   "drain",
   "sweep",
   "verify wallet",
+  "congrat",
+  "visit",
+  "telegram",
+  "discord",
 ];
 
 const SOL_RPC =
@@ -112,6 +117,10 @@ function hasCollectionGrouping(it: any): boolean {
     : false;
 }
 
+function hasVerifiedCreator(it: any): boolean {
+  return Array.isArray(it?.creators) ? it.creators.some((c: any) => c?.verified === true) : false;
+}
+
 function looksScammyAsset(it: any): boolean {
   const name = String(it?.content?.metadata?.name || "").toLowerCase();
   const symbol = String(it?.content?.metadata?.symbol || "").toLowerCase();
@@ -146,22 +155,16 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   if (!res.ok) throw new Error(`das rpc ${res.status}`);
   const json: any = await res.json();
   const items = Array.isArray(json?.result?.items) ? json.result.items : [];
-  const normalizeOne = async (it: any, requireVerified: boolean, requireVerifiedCreator: boolean) => {
+  const normalizeOne = async (it: any, requireVerified: boolean, requireCreator: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
       if (!hasCollectionGrouping(it)) return null;
       if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
+      if (requireCreator && !hasVerifiedCreator(it)) return null;
       if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
 
       const balance = Number(it?.token_info?.balance ?? 1);
       if (!Number.isFinite(balance) || balance < 1) return null;
-      if (requireVerifiedCreator) {
-        const hasAnyVerifiedCreator = Array.isArray(it?.creators)
-          ? it.creators.some((c: any) => c?.verified === true)
-          : false;
-        if (!hasAnyVerifiedCreator) return null;
-      }
-
       const primaryImage =
         String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
         String(it?.content?.links?.image || "");
@@ -177,18 +180,16 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       });
   };
 
-  const strict = await Promise.all(
-    items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, BRIDGE_ONLY_VERIFIED, true))
-  );
+  const strict = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, true, true)));
   const strictFiltered = strict.filter((a: any) => a?.id);
   if (strictFiltered.length) return strictFiltered;
 
-  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false, false)));
+  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false, true)));
   const relaxedFiltered = relaxed.filter((a: any) => a?.id);
   if (relaxedFiltered.length) return relaxedFiltered;
 
-  // Last fallback: token account path (still amount=1, decimals=0).
-  return fetchAssetsViaTokenAccounts(owner);
+  // Optional last fallback: token account path (still amount=1, decimals=0).
+  return BRIDGE_ALLOW_TOKEN_FALLBACK ? fetchAssetsViaTokenAccounts(owner) : [];
 }
 
 async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]> {
