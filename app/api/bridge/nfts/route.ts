@@ -12,6 +12,23 @@ const MAX_JSON_MS = Number(process.env.NFT_JSON_TIMEOUT_MS ?? 3_500);
 const MAX_ITEMS = Number(process.env.NFTS_MAX_ITEMS ?? 50);
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
+const BRIDGE_FILTER_SCAM = (process.env.BRIDGE_FILTER_SCAM ?? "true").toLowerCase() === "true";
+const SCAM_PATTERNS = [
+  "airdrop",
+  "claim",
+  "voucher",
+  "reward",
+  "free mint",
+  "bonus",
+  "qr",
+  "scan",
+  "http://",
+  "https://",
+  ".com",
+  ".xyz",
+  ".site",
+  "linktr",
+];
 
 const SOL_RPC =
   process.env.SOLANA_RPC_URL ||
@@ -84,17 +101,17 @@ function toAsset(mint: string, data: { name?: string; symbol?: string; image?: s
 }
 
 function isVerifiedCollectionAsset(it: any): boolean {
-  const explicitVerified =
-    it?.collection?.verified === true || it?.content?.metadata?.collection?.verified === true;
-  if (explicitVerified) return true;
+  return it?.collection?.verified === true || it?.content?.metadata?.collection?.verified === true;
+}
 
-  const hasCollectionGrouping = Array.isArray(it?.grouping)
-    ? it.grouping.some((g: any) => g?.group_key === "collection" && String(g?.group_value || "").length > 0)
-    : false;
-  const hasVerifiedCreator = Array.isArray(it?.creators)
-    ? it.creators.some((c: any) => c?.verified === true)
-    : false;
-  return hasCollectionGrouping && hasVerifiedCreator;
+function looksScammyAsset(it: any): boolean {
+  const name = String(it?.content?.metadata?.name || "").toLowerCase();
+  const symbol = String(it?.content?.metadata?.symbol || "").toLowerCase();
+  const desc = String(it?.content?.metadata?.description || "").toLowerCase();
+  const image = String(it?.content?.links?.image || "").toLowerCase();
+  const jsonUri = String(it?.content?.json_uri || "").toLowerCase();
+  const hay = `${name} ${symbol} ${desc} ${image} ${jsonUri}`;
+  return SCAM_PATTERNS.some((p) => hay.includes(p));
 }
 
 async function fetchAssetsViaDas(owner: string): Promise<any[]> {
@@ -123,14 +140,18 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   if (!res.ok) throw new Error(`das rpc ${res.status}`);
   const json: any = await res.json();
   const items = Array.isArray(json?.result?.items) ? json.result.items : [];
-  const normalized = await Promise.all(
-    items.slice(0, MAX_ITEMS).map(async (it: any) => {
+  const normalizeOne = async (it: any, requireVerified: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
-      if (BRIDGE_ONLY_VERIFIED && !isVerifiedCollectionAsset(it)) return null;
+      if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
+      if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
 
       const balance = Number(it?.token_info?.balance ?? 1);
       if (!Number.isFinite(balance) || balance < 1) return null;
+      const hasAnyVerifiedCreator = Array.isArray(it?.creators)
+        ? it.creators.some((c: any) => c?.verified === true)
+        : false;
+      if (!hasAnyVerifiedCreator) return null;
 
       const primaryImage =
         String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
@@ -144,9 +165,14 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
         symbol: String(it?.content?.metadata?.symbol || ""),
         image,
       });
-    })
-  );
-  return normalized.filter((a: any) => a?.id);
+  };
+
+  const strict = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, BRIDGE_ONLY_VERIFIED)));
+  const strictFiltered = strict.filter((a: any) => a?.id);
+  if (strictFiltered.length) return strictFiltered;
+
+  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false)));
+  return relaxed.filter((a: any) => a?.id);
 }
 
 async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]> {
