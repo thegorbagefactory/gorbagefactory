@@ -14,6 +14,7 @@ const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
 const BRIDGE_FILTER_SCAM = (process.env.BRIDGE_FILTER_SCAM ?? "true").toLowerCase() === "true";
 const BRIDGE_ALLOW_TOKEN_FALLBACK = (process.env.BRIDGE_ALLOW_TOKEN_FALLBACK ?? "false").toLowerCase() === "true";
+const BRIDGE_USE_DAS = (process.env.BRIDGE_USE_DAS ?? "false").toLowerCase() === "true";
 const BRIDGE_MINT_ALLOWLIST = new Set(
   String(process.env.BRIDGE_MINT_ALLOWLIST || "")
     .split(",")
@@ -280,11 +281,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, source: "cache", items: cached.data });
     }
 
-    let items: any[] = [];
-    try {
-      items = await fetchAssetsViaDas(owner);
-    } catch {
-      items = await fetchAssetsViaTokenAccounts(owner);
+    // Default to token-account discovery to avoid DAS spam/airdrop noise.
+    // DAS can be enabled explicitly for broader compressed NFT discovery.
+    let items: any[] = await fetchAssetsViaTokenAccounts(owner);
+    if (!items.length && BRIDGE_USE_DAS) {
+      try {
+        items = await fetchAssetsViaDas(owner);
+      } catch {
+        items = [];
+      }
     }
 
     cache.set(owner, { data: items, updatedAt: now });
