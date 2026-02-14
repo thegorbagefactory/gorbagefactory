@@ -138,15 +138,25 @@ function getCollectionMint(it: any): string {
   return String(fromGrouping || fromCollection || "").trim();
 }
 
+function getAssetMintCandidates(it: any): string[] {
+  const candidates = [
+    String(it?.id || "").trim(),
+    String(it?.token_info?.mint || "").trim(),
+    String(it?.content?.metadata?.mint || "").trim(),
+    String(it?.compression?.asset_hash || "").trim(),
+  ].filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
 function hasVerifiedCreator(it: any): boolean {
   return Array.isArray(it?.creators) ? it.creators.some((c: any) => c?.verified === true) : false;
 }
 
 function isAllowlistedAsset(it: any): boolean {
   if (!BRIDGE_MINT_ALLOWLIST.size && !BRIDGE_COLLECTION_ALLOWLIST.size) return true;
-  const mint = String(it?.id || "").trim();
+  const mintCandidates = getAssetMintCandidates(it);
   const collectionMint = getCollectionMint(it);
-  if (mint && BRIDGE_MINT_ALLOWLIST.has(mint)) return true;
+  if (mintCandidates.some((m) => BRIDGE_MINT_ALLOWLIST.has(m))) return true;
   if (collectionMint && BRIDGE_COLLECTION_ALLOWLIST.has(collectionMint)) return true;
   return false;
 }
@@ -188,11 +198,14 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   const normalizeOne = async (it: any, requireVerified: boolean, requireCreator: boolean) => {
       const iface = String(it?.interface || "");
       if (!allowedInterfaces.has(iface)) return null;
-      if (!isAllowlistedAsset(it)) return null;
-      if (!hasCollectionGrouping(it)) return null;
-      if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
-      if (requireCreator && !hasVerifiedCreator(it)) return null;
-      if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
+      const allowlisted = isAllowlistedAsset(it);
+      if (!allowlisted) return null;
+      if (!BRIDGE_MINT_ALLOWLIST.size && !BRIDGE_COLLECTION_ALLOWLIST.size) {
+        if (!hasCollectionGrouping(it)) return null;
+        if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
+        if (requireCreator && !hasVerifiedCreator(it)) return null;
+        if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
+      }
 
       const balance = Number(it?.token_info?.balance ?? 1);
       if (!Number.isFinite(balance) || balance < 1) return null;
@@ -204,7 +217,8 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       const image = normalizeUri(primaryImage) || jsonImage || "";
       if (!image) return null;
 
-      return toAsset(String(it?.id || ""), {
+      const mintForId = String(it?.token_info?.mint || it?.id || "");
+      return toAsset(mintForId, {
         name: String(it?.content?.metadata?.name || ""),
         symbol: String(it?.content?.metadata?.symbol || ""),
         image,
