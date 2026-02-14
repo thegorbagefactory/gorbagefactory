@@ -7,44 +7,10 @@ import { rateLimit, rateLimitResponse } from "../../_lib/rateLimit";
 export const runtime = "nodejs";
 
 const CACHE_TTL_MS = Number(process.env.NFT_CACHE_TTL_MS ?? 20_000);
-const MAX_RPC_MS = Number(process.env.DAS_TIMEOUT_MS ?? 7_000);
-const MAX_JSON_MS = Number(process.env.NFT_JSON_TIMEOUT_MS ?? 3_500);
+const MAX_RPC_MS = Number(process.env.DAS_TIMEOUT_MS ?? 8_000);
+const MAX_JSON_MS = Number(process.env.NFT_JSON_TIMEOUT_MS ?? 4_000);
 const MAX_ITEMS = Number(process.env.NFTS_MAX_ITEMS ?? 50);
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
-const BRIDGE_ONLY_VERIFIED = (process.env.BRIDGE_ONLY_VERIFIED ?? "true").toLowerCase() === "true";
-const BRIDGE_FILTER_SCAM = (process.env.BRIDGE_FILTER_SCAM ?? "true").toLowerCase() === "true";
-const BRIDGE_ALLOW_TOKEN_FALLBACK = (process.env.BRIDGE_ALLOW_TOKEN_FALLBACK ?? "false").toLowerCase() === "true";
-const BRIDGE_USE_DAS = (process.env.BRIDGE_USE_DAS ?? "false").toLowerCase() === "true";
-const BRIDGE_MINT_ALLOWLIST = new Set(
-  String(process.env.BRIDGE_MINT_ALLOWLIST || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
-const BRIDGE_COLLECTION_ALLOWLIST = new Set(
-  String(process.env.BRIDGE_COLLECTION_ALLOWLIST || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
-const SCAM_PATTERNS = [
-  "airdrop",
-  "claim",
-  "voucher",
-  "reward",
-  "free mint",
-  "bonus",
-  "qr",
-  "scan",
-  "wallet connect",
-  "drain",
-  "sweep",
-  "verify wallet",
-  "congrat",
-  "visit",
-  "telegram",
-  "discord",
-];
 
 const SOL_RPC =
   process.env.SOLANA_RPC_URL ||
@@ -57,6 +23,8 @@ const SOL_DAS_URL =
 
 type CacheEntry = { data: any[]; updatedAt: number };
 const cache = new Map<string, CacheEntry>();
+const connection = new Connection(SOL_RPC, "confirmed");
+const metaplex = Metaplex.make(connection);
 
 function isValidOwner(owner: string) {
   return owner.length >= 32 && owner.length <= 44 && BASE58_REGEX.test(owner);
@@ -120,57 +88,7 @@ function toAsset(mint: string, data: { name?: string; symbol?: string; image?: s
   };
 }
 
-function isVerifiedCollectionAsset(it: any): boolean {
-  return it?.collection?.verified === true || it?.content?.metadata?.collection?.verified === true;
-}
-
-function hasCollectionGrouping(it: any): boolean {
-  return Array.isArray(it?.grouping)
-    ? it.grouping.some((g: any) => g?.group_key === "collection" && String(g?.group_value || "").length > 0)
-    : false;
-}
-
-function getCollectionMint(it: any): string {
-  const fromGrouping = Array.isArray(it?.grouping)
-    ? it.grouping.find((g: any) => g?.group_key === "collection")?.group_value
-    : "";
-  const fromCollection = it?.collection?.key || it?.content?.metadata?.collection?.key || "";
-  return String(fromGrouping || fromCollection || "").trim();
-}
-
-function getAssetMintCandidates(it: any): string[] {
-  const candidates = [
-    String(it?.id || "").trim(),
-    String(it?.token_info?.mint || "").trim(),
-    String(it?.content?.metadata?.mint || "").trim(),
-    String(it?.compression?.asset_hash || "").trim(),
-  ].filter(Boolean);
-  return Array.from(new Set(candidates));
-}
-
-function hasVerifiedCreator(it: any): boolean {
-  return Array.isArray(it?.creators) ? it.creators.some((c: any) => c?.verified === true) : false;
-}
-
-function isAllowlistedAsset(it: any): boolean {
-  if (!BRIDGE_MINT_ALLOWLIST.size && !BRIDGE_COLLECTION_ALLOWLIST.size) return true;
-  const mintCandidates = getAssetMintCandidates(it);
-  const collectionMint = getCollectionMint(it);
-  if (mintCandidates.some((m) => BRIDGE_MINT_ALLOWLIST.has(m))) return true;
-  if (collectionMint && BRIDGE_COLLECTION_ALLOWLIST.has(collectionMint)) return true;
-  return false;
-}
-
-function looksScammyAsset(it: any): boolean {
-  const name = String(it?.content?.metadata?.name || "").toLowerCase();
-  const symbol = String(it?.content?.metadata?.symbol || "").toLowerCase();
-  const desc = String(it?.content?.metadata?.description || "").toLowerCase();
-  const hay = `${name} ${symbol} ${desc}`;
-  return SCAM_PATTERNS.some((p) => hay.includes(p));
-}
-
 async function fetchAssetsViaDas(owner: string): Promise<any[]> {
-  const allowedInterfaces = new Set(["V1_NFT", "ProgrammableNFT", "CompressedNFT", "MplCoreAsset"]);
   const payload = {
     jsonrpc: "2.0",
     id: "bridge-nfts",
@@ -182,6 +100,7 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       sortBy: { sortBy: "created", sortDirection: "desc" },
     },
   };
+
   const res = await withTimeout(
     fetch(SOL_DAS_URL, {
       method: "POST",
@@ -193,55 +112,42 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
     "das fetch"
   );
   if (!res.ok) throw new Error(`das rpc ${res.status}`);
+
   const json: any = await res.json();
   const items = Array.isArray(json?.result?.items) ? json.result.items : [];
-  const normalizeOne = async (it: any, requireVerified: boolean, requireCreator: boolean) => {
-      const iface = String(it?.interface || "");
-      if (!allowedInterfaces.has(iface)) return null;
-      const allowlisted = isAllowlistedAsset(it);
-      if (!allowlisted) return null;
-      if (!BRIDGE_MINT_ALLOWLIST.size && !BRIDGE_COLLECTION_ALLOWLIST.size) {
-        if (!hasCollectionGrouping(it)) return null;
-        if (requireVerified && !isVerifiedCollectionAsset(it)) return null;
-        if (requireCreator && !hasVerifiedCreator(it)) return null;
-        if (BRIDGE_FILTER_SCAM && looksScammyAsset(it)) return null;
-      }
+  const out: any[] = [];
 
-      const balance = Number(it?.token_info?.balance ?? 1);
-      if (!Number.isFinite(balance) || balance < 1) return null;
-      const primaryImage =
-        String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
-        String(it?.content?.links?.image || "");
-      const jsonUri = String(it?.content?.json_uri || "");
-      const jsonImage = jsonUri ? await fetchJsonImage(jsonUri) : "";
-      const image = normalizeUri(primaryImage) || jsonImage || "";
-      if (!image) return null;
+  for (const it of items.slice(0, MAX_ITEMS)) {
+    const iface = String(it?.interface || "");
+    if (!["V1_NFT", "ProgrammableNFT", "CompressedNFT", "MplCoreAsset"].includes(iface)) continue;
+    const balance = Number(it?.token_info?.balance ?? 1);
+    if (!Number.isFinite(balance) || balance < 1) continue;
 
-      const mintForId = String(it?.token_info?.mint || it?.id || "");
-      return toAsset(mintForId, {
+    const mint = String(it?.token_info?.mint || it?.id || "").trim();
+    if (!mint) continue;
+
+    const primaryImage =
+      String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
+      String(it?.content?.links?.image || "");
+    const jsonUri = String(it?.content?.json_uri || "");
+    const image = normalizeUri(primaryImage) || (jsonUri ? await fetchJsonImage(jsonUri) : "");
+
+    out.push(
+      toAsset(mint, {
         name: String(it?.content?.metadata?.name || ""),
         symbol: String(it?.content?.metadata?.symbol || ""),
         image,
-      });
-  };
+      })
+    );
+  }
 
-  const strict = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, true, true)));
-  const strictFiltered = strict.filter((a: any) => a?.id);
-  if (strictFiltered.length) return strictFiltered;
-
-  const relaxed = await Promise.all(items.slice(0, MAX_ITEMS).map((it: any) => normalizeOne(it, false, true)));
-  const relaxedFiltered = relaxed.filter((a: any) => a?.id);
-  if (relaxedFiltered.length) return relaxedFiltered;
-
-  // Optional last fallback: token account path (still amount=1, decimals=0).
-  return BRIDGE_ALLOW_TOKEN_FALLBACK ? fetchAssetsViaTokenAccounts(owner) : [];
+  return out;
 }
 
 async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]> {
-  const connection = new Connection(SOL_RPC, "confirmed");
-  const metaplex = Metaplex.make(connection);
   const owner = new PublicKey(ownerAddress);
   const mints = new Set<string>();
+
   for (const programId of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
     const parsed = await withTimeout(
       connection.getParsedTokenAccountsByOwner(owner, { programId }, "confirmed"),
@@ -253,14 +159,14 @@ async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]>
       const mint = String(info?.mint || "");
       const amount = Number(info?.tokenAmount?.uiAmount ?? 0);
       const decimals = Number(info?.tokenAmount?.decimals ?? 0);
-      if (mint && amount === 1 && decimals === 0) mints.add(mint);
+      if (mint && amount > 0 && decimals === 0) mints.add(mint);
       if (mints.size >= MAX_ITEMS) break;
     }
     if (mints.size >= MAX_ITEMS) break;
   }
+
   const mintList = Array.from(mints).slice(0, MAX_ITEMS);
   if (!mintList.length) return [];
-
   const mintPubkeys = mintList.map((m) => new PublicKey(m));
   const metasRaw: any[] = await withTimeout(
     metaplex.nfts().findAllByMintList({ mints: mintPubkeys }) as Promise<any[]>,
@@ -295,30 +201,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, source: "cache", items: cached.data });
     }
 
-    const hasAllowlist = BRIDGE_MINT_ALLOWLIST.size > 0 || BRIDGE_COLLECTION_ALLOWLIST.size > 0;
     let items: any[] = [];
-
-    if (hasAllowlist) {
-      // If allowlist is configured, prefer DAS so compressed NFTs on the allowlist can be discovered.
-      try {
-        items = await fetchAssetsViaDas(owner);
-      } catch {
-        items = [];
-      }
-    } else {
-      // Default to token-account discovery to avoid DAS spam/airdrop noise.
+    try {
+      items = await fetchAssetsViaDas(owner);
+    } catch {
+      items = [];
+    }
+    if (!items.length) {
       items = await fetchAssetsViaTokenAccounts(owner);
-      if (!items.length && BRIDGE_USE_DAS) {
-        try {
-          items = await fetchAssetsViaDas(owner);
-        } catch {
-          items = [];
-        }
-      }
     }
 
-    cache.set(owner, { data: items, updatedAt: now });
-    return NextResponse.json({ ok: true, source: "live", items });
+    const dedup = items.filter((a, i, arr) => a?.id && arr.findIndex((x) => x.id === a.id) === i);
+    cache.set(owner, { data: dedup, updatedAt: now });
+    return NextResponse.json({ ok: true, source: "live", items: dedup });
   } catch (e) {
     console.error("[/api/bridge/nfts] error", e);
     return NextResponse.json({ error: "Failed to load NFTs" }, { status: 500 });
