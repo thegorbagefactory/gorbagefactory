@@ -22,12 +22,10 @@ const SCAM_PATTERNS = [
   "bonus",
   "qr",
   "scan",
-  "http://",
-  "https://",
-  ".com",
-  ".xyz",
-  ".site",
-  "linktr",
+  "wallet connect",
+  "drain",
+  "sweep",
+  "verify wallet",
 ];
 
 const SOL_RPC =
@@ -112,14 +110,12 @@ function looksScammyAsset(it: any): boolean {
   const name = String(it?.content?.metadata?.name || "").toLowerCase();
   const symbol = String(it?.content?.metadata?.symbol || "").toLowerCase();
   const desc = String(it?.content?.metadata?.description || "").toLowerCase();
-  const image = String(it?.content?.links?.image || "").toLowerCase();
-  const jsonUri = String(it?.content?.json_uri || "").toLowerCase();
-  const hay = `${name} ${symbol} ${desc} ${image} ${jsonUri}`;
+  const hay = `${name} ${symbol} ${desc}`;
   return SCAM_PATTERNS.some((p) => hay.includes(p));
 }
 
 async function fetchAssetsViaDas(owner: string): Promise<any[]> {
-  const allowedInterfaces = new Set(["V1_NFT", "ProgrammableNFT"]);
+  const allowedInterfaces = new Set(["V1_NFT", "ProgrammableNFT", "CompressedNFT", "MplCoreAsset"]);
   const payload = {
     jsonrpc: "2.0",
     id: "bridge-nfts",
