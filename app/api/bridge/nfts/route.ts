@@ -49,11 +49,16 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 function normalizeUri(input?: string): string {
   const value = (input || "").trim();
   if (!value) return "";
+  if (value.startsWith("data:image/")) return value;
   if (value.startsWith("ipfs://")) {
     return `https://ipfs.io/ipfs/${value.slice("ipfs://".length).replace(/^ipfs\//, "")}`;
   }
   if (value.startsWith("ar://")) {
     return `https://arweave.net/${value.slice("ar://".length)}`;
+  }
+  // Some metadata stores raw CID values without a URI scheme.
+  if (/^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|bafy[1-9A-Za-z]{20,})$/.test(value)) {
+    return `https://ipfs.io/ipfs/${value}`;
   }
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
   return "";
@@ -67,7 +72,15 @@ async function fetchJsonImage(uri: string): Promise<string> {
     const res = await fetch(uri, { signal: controller.signal, cache: "no-store" });
     if (!res.ok) return "";
     const json: any = await res.json();
-    return normalizeUri(String(json?.image || "").trim());
+    const direct =
+      typeof json?.image === "string"
+        ? json.image
+        : typeof json?.properties?.image === "string"
+          ? json.properties.image
+          : typeof json?.image?.uri === "string"
+            ? json.image.uri
+            : "";
+    return normalizeUri(String(direct || "").trim());
   } catch {
     return "";
   } finally {
@@ -208,7 +221,15 @@ async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]>
       const name = String(meta?.name || "").trim();
       const symbol = String(meta?.symbol || "").trim();
       const uri = String(meta?.uri || "").trim();
-      const image = (uri ? await fetchJsonImage(uri) : "") || (await resolveImageForMint(mint));
+      let image = (uri ? await fetchJsonImage(uri) : "") || (await resolveImageForMint(mint));
+      if (!image && meta) {
+        try {
+          const loaded: any = await withTimeout(metaplex.nfts().load({ metadata: meta }), MAX_RPC_MS, "metadata load");
+          image = normalizeUri(String(loaded?.json?.image || ""));
+        } catch {
+          // keep empty image; frontend will use fallback
+        }
+      }
       return toAsset(mint, { name, symbol, image });
     })
   );
