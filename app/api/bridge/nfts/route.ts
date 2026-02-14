@@ -83,6 +83,7 @@ function toAsset(mint: string, data: { name?: string; symbol?: string; image?: s
 }
 
 async function fetchAssetsViaDas(owner: string): Promise<any[]> {
+  const allowedInterfaces = new Set(["V1_NFT", "ProgrammableNFT"]);
   const payload = {
     jsonrpc: "2.0",
     id: "bridge-nfts",
@@ -107,16 +108,29 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
   if (!res.ok) throw new Error(`das rpc ${res.status}`);
   const json: any = await res.json();
   const items = Array.isArray(json?.result?.items) ? json.result.items : [];
-  return items
-    .slice(0, MAX_ITEMS)
-    .map((it: any) =>
-      toAsset(String(it?.id || ""), {
+  const normalized = await Promise.all(
+    items.slice(0, MAX_ITEMS).map(async (it: any) => {
+      const iface = String(it?.interface || "");
+      if (!allowedInterfaces.has(iface)) return null;
+
+      const balance = Number(it?.token_info?.balance ?? 1);
+      if (!Number.isFinite(balance) || balance < 1) return null;
+
+      const primaryImage =
+        String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
+        String(it?.content?.links?.image || "");
+      const jsonUri = String(it?.content?.json_uri || "");
+      const jsonImage = jsonUri ? await fetchJsonImage(jsonUri) : "";
+      const image = normalizeUri(primaryImage) || jsonImage || "";
+
+      return toAsset(String(it?.id || ""), {
         name: String(it?.content?.metadata?.name || ""),
         symbol: String(it?.content?.metadata?.symbol || ""),
-        image: String(it?.content?.links?.image || ""),
-      })
-    )
-    .filter((a: any) => a?.id);
+        image,
+      });
+    })
+  );
+  return normalized.filter((a: any) => a?.id);
 }
 
 async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]> {
@@ -135,7 +149,7 @@ async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]>
       const mint = String(info?.mint || "");
       const amount = Number(info?.tokenAmount?.uiAmount ?? 0);
       const decimals = Number(info?.tokenAmount?.decimals ?? 0);
-      if (mint && amount > 0 && decimals === 0) mints.add(mint);
+      if (mint && amount === 1 && decimals === 0) mints.add(mint);
       if (mints.size >= MAX_ITEMS) break;
     }
     if (mints.size >= MAX_ITEMS) break;
