@@ -64,6 +64,7 @@ export default function BridgePage() {
   const [loadingNfts, setLoadingNfts] = useState(false);
   const [status, setStatus] = useState("Connect wallet to start bridge.");
   const [isRunning, setIsRunning] = useState(false);
+  const [manualMint, setManualMint] = useState("");
 
   const machineData = useMemo(
     () => MACHINE_OPTIONS.find((m) => m.id === machine) || MACHINE_OPTIONS[0],
@@ -219,6 +220,25 @@ export default function BridgePage() {
     }
   }
 
+  async function loadMintDirect() {
+    if (!manualMint.trim()) return;
+    try {
+      setStatus("Loading mint...");
+      const res = await fetch(`/api/bridge/nft?mint=${encodeURIComponent(manualMint.trim())}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data?.item) throw new Error(data?.error || "Mint lookup failed");
+      const asset = data.item as DasAsset;
+      setNfts((prev) => {
+        const next = [asset, ...prev.filter((p) => p.id !== asset.id)];
+        return next.slice(0, 50);
+      });
+      setSelected(asset);
+      setStatus("Mint loaded. Ready to bridge.");
+    } catch (err: any) {
+      setStatus(err?.message || "Mint lookup failed.");
+    }
+  }
+
   return (
     <main className="bridge-root">
       <div className="bridge-bg">
@@ -259,6 +279,17 @@ export default function BridgePage() {
           </button>
           <button className="btn btn-ghost" onClick={() => loadNfts()} disabled={!wallet || loadingNfts}>
             {loadingNfts ? "Loading..." : "Load Wallet NFTs"}
+          </button>
+        </div>
+        <div className="bridge-manual-row">
+          <input
+            className="bridge-manual-input"
+            placeholder="Or paste mint address to load exact NFT"
+            value={manualMint}
+            onChange={(e) => setManualMint(e.target.value)}
+          />
+          <button className="btn btn-ghost" onClick={loadMintDirect}>
+            Load Mint
           </button>
         </div>
         {walletErr ? <div className="bridge-wallet-err">{walletErr}</div> : null}
@@ -495,6 +526,22 @@ export default function BridgePage() {
           margin: -6px 0 12px;
           font-size: 12px;
           color: rgba(255, 130, 130, 0.95);
+        }
+        .bridge-manual-row {
+          display: flex;
+          gap: 8px;
+          margin: -4px 0 14px;
+          flex-wrap: wrap;
+        }
+        .bridge-manual-input {
+          flex: 1 1 360px;
+          min-width: 220px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.28);
+          color: rgba(255, 255, 255, 0.92);
+          padding: 10px 12px;
+          font-size: 13px;
         }
         .bridge-card {
           border: 1px solid rgba(255, 255, 255, 0.11);
