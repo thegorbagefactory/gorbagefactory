@@ -25,6 +25,7 @@ type CacheEntry = { data: any[]; updatedAt: number };
 const cache = new Map<string, CacheEntry>();
 const connection = new Connection(SOL_RPC, "confirmed");
 const metaplex = Metaplex.make(connection);
+const imageCache = new Map<string, string>();
 
 function isValidOwner(owner: string) {
   return owner.length >= 32 && owner.length <= 44 && BASE58_REGEX.test(owner);
@@ -71,6 +72,30 @@ async function fetchJsonImage(uri: string): Promise<string> {
     return "";
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function resolveImageForMint(mint: string): Promise<string> {
+  if (!mint) return "";
+  if (imageCache.has(mint)) return imageCache.get(mint) || "";
+  try {
+    const loaded: any = await withTimeout(
+      metaplex.nfts().findByMint({ mintAddress: new PublicKey(mint) }),
+      MAX_RPC_MS,
+      "mint metadata"
+    );
+    const fromJson = normalizeUri(String(loaded?.json?.image || ""));
+    if (fromJson) {
+      imageCache.set(mint, fromJson);
+      return fromJson;
+    }
+    const uri = String(loaded?.uri || "").trim();
+    const fromUri = uri ? await fetchJsonImage(uri) : "";
+    imageCache.set(mint, fromUri || "");
+    return fromUri || "";
+  } catch {
+    imageCache.set(mint, "");
+    return "";
   }
 }
 
@@ -130,7 +155,10 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
       String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
       String(it?.content?.links?.image || "");
     const jsonUri = String(it?.content?.json_uri || "");
-    const image = normalizeUri(primaryImage) || (jsonUri ? await fetchJsonImage(jsonUri) : "");
+    const image =
+      normalizeUri(primaryImage) ||
+      (jsonUri ? await fetchJsonImage(jsonUri) : "") ||
+      (await resolveImageForMint(mint));
 
     out.push(
       toAsset(mint, {
@@ -180,7 +208,7 @@ async function fetchAssetsViaTokenAccounts(ownerAddress: string): Promise<any[]>
       const name = String(meta?.name || "").trim();
       const symbol = String(meta?.symbol || "").trim();
       const uri = String(meta?.uri || "").trim();
-      const image = uri ? await fetchJsonImage(uri) : "";
+      const image = (uri ? await fetchJsonImage(uri) : "") || (await resolveImageForMint(mint));
       return toAsset(mint, { name, symbol, image });
     })
   );
