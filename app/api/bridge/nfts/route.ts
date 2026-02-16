@@ -80,7 +80,14 @@ async function fetchJsonImage(uri: string): Promise<string> {
           : typeof json?.image?.uri === "string"
             ? json.image.uri
             : "";
-    return normalizeUri(String(direct || "").trim());
+    const fileCandidate = Array.isArray(json?.properties?.files)
+      ? String(
+          json.properties.files.find((f: any) => String(f?.type || f?.mime || "").startsWith("image/"))?.uri ||
+            json.properties.files[0]?.uri ||
+            ""
+        )
+      : "";
+    return normalizeUri(String(direct || fileCandidate || "").trim());
   } catch {
     return "";
   } finally {
@@ -165,8 +172,11 @@ async function fetchAssetsViaDas(owner: string): Promise<any[]> {
     if (!mint) continue;
 
     const primaryImage =
-      String(it?.content?.files?.find((f: any) => String(f?.mime || "").startsWith("image/"))?.uri || "") ||
-      String(it?.content?.links?.image || "");
+      String(
+        it?.content?.files?.find((f: any) => String(f?.mime || f?.type || "").startsWith("image/"))?.uri ||
+          it?.content?.files?.[0]?.uri ||
+          ""
+      ) || String(it?.content?.links?.image || "");
     const jsonUri = String(it?.content?.json_uri || "");
     const image =
       normalizeUri(primaryImage) ||
